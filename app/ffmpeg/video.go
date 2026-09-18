@@ -213,20 +213,28 @@ func startVideo(fps, _w, _h int) {
 		panic(fmt.Sprintf("ffmpeg's video process failed to start! Please check if video parameters are entered correctly or video codec is supported by provided container. Error: %s", err))
 	}
 
-	freePBOPool = make(chan *PBO, MaxVideoBuffers)
-
+	// NOTE(grid): no freePBOPool = make here — the pool is created once
+	// inside CallMain below and reused across span encodes.
 	goroutines.CallMain(func() {
 		if parsedFormat != pixconv.ARGB {
-			rgbToYuvConverter = effects.NewRGBYUV(w, h, parsedFormat != pixconv.I444 && parsedFormat != pixconv.I422)
+			if rgbToYuvConverter == nil {
+				rgbToYuvConverter = effects.NewRGBYUV(w, h, parsedFormat != pixconv.I444 && parsedFormat != pixconv.I422)
+			}
 		}
 
-		for i := 0; i < MaxVideoBuffers; i++ {
-			freePBOPool <- createPBO(parsedFormat)
+		// Grid spans reuse one process: keep a single PBO pool across
+		// startVideo calls instead of leaking one pool per span.
+		if freePBOPool == nil {
+			freePBOPool = make(chan *PBO, MaxVideoBuffers)
+
+			for i := 0; i < MaxVideoBuffers; i++ {
+				freePBOPool <- createPBO(parsedFormat)
+			}
 		}
 
 		if settings.Recording.MotionBlur.Enabled {
 			bFrames := settings.Recording.MotionBlur.BlendFrames
-			blend = effects.NewBlend(w, h, bFrames, calculateWeights(bFrames))
+			blend = effects.NewBlend(w, h, calculateWeights(bFrames))
 		}
 	})
 

@@ -17,6 +17,7 @@ var TAG = 1
 var RECORD = false
 var REPLAY = ""
 var LOCALOFFSET = 0
+var GRID = false
 var PerfGraph = false
 var CallGraph = false
 var JsonPatch = ""

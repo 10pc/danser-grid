@@ -172,8 +172,10 @@ func NewPlayer(beatMap *beatmap.BeatMap) *Player {
 	log.Println("Playing:", player.mapFullName)
 
 	var track *bass.TrackBass
-	if fPath, err2 := beatMap.GetAudioFile(); err2 == nil {
-		track = bass.NewTrack(fPath)
+	if !settings.GRID {
+		if fPath, err2 := beatMap.GetAudioFile(); err2 == nil {
+			track = bass.NewTrack(fPath)
+		}
 	}
 
 	if track == nil {

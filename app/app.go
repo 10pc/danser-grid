@@ -57,6 +57,9 @@ const (
 
 var player states.State
 
+// gridBeatmaps holds the loaded map library for grid mode (no single map).
+var gridBeatmaps []*beatmap.BeatMap
+
 var scheduleScreenshot = false
 
 var batch *batch2.QuadBatch
@@ -108,6 +111,8 @@ func run() {
 
 		knockout := flag.Bool("knockout", false, "Use (classic) knockout feature. Replays are sourced from \"replays/{a}\" where {a} is an md5 hash of .osu file. Danser automatically organizes replay files put directly in \"replays\", using maps' md5s provided by the replay files.")
 		knockout2 := flag.String("knockout2", "", "Use (new) knockout feature, JSON list of paths to compatible replay files has to be provided. \"Knockout.ExcludeMods\" and \"Knockout.MaxPlayers\" options are ignored, they have to be filtered beforehand.")
+
+		grid := flag.String("grid", "", "Grid span renderer: path to a JSON span spec (tile layouts + replay list). Records static grid spans; implies -record. Incompatible with -replay, -knockout, -play, -ss, -start, -end.")
 
 		speed := flag.Float64("speed", 1.0, "Specify music's speed, set to 1.5 to have DoubleTime mod experience")
 		pitch := flag.Float64("pitch", 1.0, "Specify music's pitch, set to 1.5 with -speed=1.5 to have Nightcore mod experience")
@@ -194,6 +199,18 @@ func run() {
 			panic("Incompatible flags selected: -ss, -record")
 		}
 
+		gridMode := *grid != ""
+		if gridMode {
+			if *replay != "" || *knockout || *play || screenshotMode {
+				panic("Incompatible flags selected: -grid with -replay, -knockout, -play or -ss")
+			}
+			if *start != 0 || !math.IsInf(*end, 1) {
+				panic("Incompatible flags selected: -grid with -start or -end (spans define their own windows)")
+			}
+			recordMode = true
+			log.Println("Grid mode: forcing -record semantics")
+		}
+
 		modsParsed := difficulty2.ParseMods(*mods)
 		var modsNew []rplpa.ModInfo = nil
 
@@ -262,7 +279,7 @@ func run() {
 
 		closeAfterSettingsLoad := false
 
-		if (*md5+*artist+*title+*difficulty+*creator) == "" && *id < 0 {
+		if (*md5+*artist+*title+*difficulty+*creator) == "" && *id < 0 && !gridMode {
 			log.Println("No beatmap specified, closing...")
 			closeAfterSettingsLoad = true
 		}
@@ -272,12 +289,18 @@ func run() {
 		settings.KNOCKOUTREPLAYS = knockoutReplays
 		settings.PLAY = *play
 		settings.DIVIDES = *cursors
-		settings.TAG = *tag
-		settings.SPEED = *speed
+		settings.TAG = *tag		settings.SPEED = *speed
 		settings.PITCH = *pitch
 		settings.SKIP = *skip
 		settings.START = *start
 		settings.END = *end
+		settings.GRID = gridMode
+		if gridMode {
+			// One cursor per tile; mirror collage would multiply every tile.
+			settings.DIVIDES = 1
+			settings.TAG = 1
+			recordMode = true
+		}
 		settings.RECORD = recordMode || screenshotMode
 		settings.LOCALOFFSET = *offset
 
@@ -307,6 +330,7 @@ func run() {
 				log.Println("Failed to initialize database:", err)
 			} else {
 				beatmaps := database.LoadBeatmaps(*noDbCheck, nil)
+				gridBeatmaps = beatmaps
 
 				if *id > -1 {
 					for _, b := range beatmaps {
@@ -352,10 +376,10 @@ func run() {
 				}
 			}
 
-			if beatMap == nil {
+			if beatMap == nil && !settings.GRID {
 				log.Println("Beatmap not found, closing...")
 				closeAfterSettingsLoad = true
-			} else {
+			} else if beatMap != nil {
 				beatMap.UpdatePlayStats()
 				database.UpdatePlayStats(beatMap)
 			}
@@ -592,21 +616,27 @@ func run() {
 			}
 		}
 
-		if modsNew != nil {
-			beatMap.Diff.SetMods2(modsNew)
+		if settings.GRID {
+			states.RunGrid(*grid, gridBeatmaps)
 		} else {
-			beatMap.Diff.SetMods(modsParsed)
-		}
+			if modsNew != nil {
+				beatMap.Diff.SetMods2(modsNew)
+			} else {
+				beatMap.Diff.SetMods(modsParsed)
+			}
 
-		beatmap.ParseTimingPointsAndPauses(beatMap)
-		beatmap.ParseObjects(beatMap, false, true)
-		beatMap.LoadCustomSamples()
-		player = states.NewPlayer(beatMap)
+			beatmap.ParseTimingPointsAndPauses(beatMap)
+			beatmap.ParseObjects(beatMap, false, true)
+			beatMap.LoadCustomSamples()
+			player = states.NewPlayer(beatMap)
+		}
 
 		limiter = frame.NewLimiter(int(settings.Graphics.FPSCap))
 	})
 
-	if recordMode {
+	if settings.GRID {
+		// RunGrid rendered every span already; nothing left to loop.
+	} else if recordMode {
 		mainLoopRecord()
 	} else if screenshotMode {
 		mainLoopSS()
