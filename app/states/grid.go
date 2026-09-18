@@ -187,6 +187,10 @@ func layoutTiles(tiles []*GridTile, tsp []GridTileSpec) {
 		p.mainCamera.Update()
 		p.objectCamera.SetOsuViewport(r[2], r[3], sc, true, settings.Playfield.OsuShift)
 		p.objectCamera.Update()
+		// Cursor edge-bounce bounds follow the tile (not the full canvas).
+		for _, c := range p.controller.GetCursors() {
+			c.SetOsuRect(p.mainCamera.GetWorldRect())
+		}
 		p.bgCamera.SetOsuViewport(r[2], r[3], sbScale,
 			!settings.Playfield.OsuShift && settings.Playfield.MoveStoryboardWithPlayfield, false)
 		p.bgCamera.Update()
@@ -228,7 +232,11 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 	updateDelta := 1000.0 / math.Max(fps, 1000)
 	fpsDelta := 1000.0 / fps
 
-	settings.Playfield.DrawCursors = false // M1: cursor trails land in M2
+	// M2 look: cursors on (per-tile bounds below); storyboards off (dim
+	// static BG per tile, no animated SB threads); bloom/blur follow the
+	// loaded profile like legacy renders.
+	settings.Playfield.DrawCursors = true
+	settings.Playfield.Background.LoadStoryboards = false
 
 	// GL init block on the pump thread: shared FBO + all tile players.
 	var fbo *buffer.Framebuffer

@@ -83,6 +83,12 @@ type Cursor struct {
 	InvertDisplayH   bool
 	InvertDisplayV   bool
 
+	// Grid: per-tile edge-bounce bounds. Stock behavior reads the global
+	// osuRect (full-window camera); grid tiles set their own rect so the
+	// cursor bounces inside its tile instead of the whole canvas.
+	osuRect   camera.Rectangle
+	osuRectOK bool
+
 	Position vector.Vector2f
 
 	Name      string
@@ -135,6 +141,11 @@ func (cursor *Cursor) SetPos(pt vector.Vector2f) {
 	cursor.RawPosition = pt
 	tmp := pt
 
+	bounds := osuRect
+	if cursor.osuRectOK {
+		bounds = cursor.osuRect
+	}
+
 	if cursor.InvertDisplayV {
 		tmp.Y = 384 - tmp.Y
 	}
@@ -144,28 +155,28 @@ func (cursor *Cursor) SetPos(pt vector.Vector2f) {
 	}
 
 	if settings.Cursor.BounceOnEdges && settings.DIVIDES <= 2 {
-		tmp.X -= osuRect.MinX
-		tmp.Y -= osuRect.MinY
-		tmp.X = math32.Mod(tmp.X, 2*(osuRect.MaxX-osuRect.MinX))
-		tmp.Y = math32.Mod(tmp.Y, 2*(osuRect.MaxY-osuRect.MinY))
-		tmp.X += osuRect.MinX
-		tmp.Y += osuRect.MinY
+		tmp.X -= bounds.MinX
+		tmp.Y -= bounds.MinY
+		tmp.X = math32.Mod(tmp.X, 2*(bounds.MaxX-bounds.MinX))
+		tmp.Y = math32.Mod(tmp.Y, 2*(bounds.MaxY-bounds.MinY))
+		tmp.X += bounds.MinX
+		tmp.Y += bounds.MinY
 
 		for {
 			ok1, ok2 := false, false
 
-			if tmp.X < osuRect.MinX {
-				tmp.X = 2*osuRect.MinX - tmp.X
-			} else if tmp.X > osuRect.MaxX {
-				tmp.X = 2*osuRect.MaxX - tmp.X
+			if tmp.X < bounds.MinX {
+				tmp.X = 2*bounds.MinX - tmp.X
+			} else if tmp.X > bounds.MaxX {
+				tmp.X = 2*bounds.MaxX - tmp.X
 			} else {
 				ok1 = true
 			}
 
-			if tmp.Y < osuRect.MinY {
-				tmp.Y = 2*osuRect.MinY - tmp.Y
-			} else if tmp.Y > osuRect.MaxY {
-				tmp.Y = 2*osuRect.MaxY - tmp.Y
+			if tmp.Y < bounds.MinY {
+				tmp.Y = 2*bounds.MinY - tmp.Y
+			} else if tmp.Y > bounds.MaxY {
+				tmp.Y = 2*bounds.MaxY - tmp.Y
 			} else {
 				ok2 = true
 			}
@@ -178,6 +189,11 @@ func (cursor *Cursor) SetPos(pt vector.Vector2f) {
 
 	cursor.Position = tmp
 	cursor.renderer.SetPosition(cursor.Position)
+}
+
+func (cursor *Cursor) SetOsuRect(r camera.Rectangle) {
+	cursor.osuRect = r
+	cursor.osuRectOK = true
 }
 
 func (cursor *Cursor) SetScreenPos(pt vector.Vector2f) {

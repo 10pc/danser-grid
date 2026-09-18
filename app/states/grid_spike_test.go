@@ -13,6 +13,7 @@ package states
 
 import (
 	"fmt"
+	"image"
 	"image/png"
 	"io"
 	"os"
@@ -435,7 +436,63 @@ func gridDual(t *testing.T) error {
 	}
 	t.Logf("SLICE3c PASS: identical frames from identical clocks (%d bytes)", len(b1))
 	t.Logf("SLICE3 PASS: rates, seek, determinism")
+
+	// ---- slice 2b: cursor layer paints (same clocks, cursor flag flip) ----
+	settings.Playfield.DrawCursors = true
+	if err := drawTiles(t, players, rects, "cur-on"); err != nil {
+		return err
+	}
+	settings.Playfield.DrawCursors = false
+	if err := drawTiles(t, players, rects, "cur-off"); err != nil {
+		return err
+	}
+	diff, err := shotDiff(
+		filepath.Join(shotDir, "grid-cur-on.png"),
+		filepath.Join(shotDir, "grid-cur-off.png"))
+	if err != nil {
+		return err
+	}
+	t.Logf("cursor on/off mean abs diff: %.2f", diff)
+	if diff < 0.5 {
+		return fmt.Errorf("cursor layer paints nothing (diff %.2f)", diff)
+	}
+	t.Logf("SLICE2b PASS: cursor layer paints per-tile cursors")
 	return nil
+}
+
+// shotDiff mean-absolute pixel difference between two PNGs.
+func shotDiff(pathA, pathB string) (float64, error) {
+	imgA, err := decodeShot(pathA)
+	if err != nil {
+		return 0, err
+	}
+	imgB, err := decodeShot(pathB)
+	if err != nil {
+		return 0, err
+	}
+	b := imgA.Bounds()
+	if imgB.Bounds() != b {
+		return 0, fmt.Errorf("shot dims differ")
+	}
+	var diff, n float64
+	for y := 0; y < b.Dy(); y += 7 {
+		for x := 0; x < b.Dx(); x += 7 {
+			lr, lg, lb, _ := imgA.At(x, y).RGBA()
+			rr, rg, rb, _ := imgB.At(x, y).RGBA()
+			diff += abs(float64(lr)-float64(rr)) + abs(float64(lg)-float64(rg)) + abs(float64(lb)-float64(rb))
+			n += 3
+		}
+	}
+	return diff / n / 257, nil
+}
+
+func decodeShot(path string) (image.Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return png.Decode(f)
 }
 
 // drawTiles renders the red readback probe then the static grid.
@@ -482,6 +539,9 @@ func retile(p *Player, r [4]int) {
 	p.uiCamera.SetViewport(w, h, true)
 	p.uiCamera.SetViewportF(0, h, w, 0)
 	p.uiCamera.Update()
+	for _, c := range p.controller.GetCursors() {
+		c.SetOsuRect(p.mainCamera.GetWorldRect())
+	}
 }
 
 // assertGridShot checks a 1920x1080 PNG: both halves non-black with content,
