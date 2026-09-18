@@ -332,6 +332,24 @@ func gridDual(t *testing.T) error {
 		}
 	}
 	t.Logf("clocks at shot: %.0f / %.0f", players[0].GetTime(), players[1].GetTime())
+	// Readback sanity: solid red, no draws — isolates glReadPixels path.
+	gl.ClearColor(1, 0, 0, 1)
+	gl.Disable(gl.DITHER)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.Finish()
+	utils.MakeScreenshot(1920, 1080, "grid-red", false)
+	redShot := filepath.Join(env.DataDir(), "screenshots", "grid-red.png")
+	rf, err := os.Open(redShot)
+	if err != nil {
+		return fmt.Errorf("red screenshot missing: %w", err)
+	}
+	redImg, err := png.Decode(rf)
+	_ = rf.Close()
+	if err != nil {
+		return fmt.Errorf("red decode: %w", err)
+	}
+	rr, _, _, _ := redImg.At(960, 540).RGBA()
+	t.Logf("red probe pixel: R=%d", rr>>8)
 	gl.ClearColor(0, 0, 0, 1)
 	gl.Enable(gl.SCISSOR_TEST)
 	gl.Disable(gl.DITHER)
