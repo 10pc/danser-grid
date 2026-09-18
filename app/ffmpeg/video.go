@@ -234,7 +234,7 @@ func startVideo(fps, _w, _h int) {
 
 		if settings.Recording.MotionBlur.Enabled {
 			bFrames := settings.Recording.MotionBlur.BlendFrames
-			blend = effects.NewBlend(w, h, calculateWeights(bFrames))
+			blend = effects.NewBlend(w, h, bFrames, calculateWeights(bFrames))
 		}
 	})
 
