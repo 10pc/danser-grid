@@ -120,6 +120,7 @@ func gridDual(t *testing.T) error {
 		beatmap.ParseTimingPointsAndPauses(bMap)
 		beatmap.ParseObjects(bMap, false, true)
 		bMap.LoadCustomSamples()
+		t.Logf("parsed %s", rpPath)
 		specs = append(specs, tileSpec{bMap, rpPath,
 			bMap.Artist + " - " + bMap.Name + " [" + bMap.Difficulty + "]", false})
 	}
@@ -130,6 +131,7 @@ func gridDual(t *testing.T) error {
 	var players [2]*Player
 	var names [2]string
 	var glErr error
+	t.Logf("entering CallMain for GL init + construction")
 	goroutines.CallMain(func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -162,14 +164,17 @@ func gridDual(t *testing.T) error {
 		bass.Init(true)
 
 		for i, sp := range specs {
+			t.Logf("constructing tile %d", i)
 			svStart, svEnd, svSkip := settings.START, settings.END, settings.SKIP
 			svKO := settings.KNOCKOUTREPLAYS
 			settings.KNOCKOUTREPLAYS = []string{sp.replay}
 			players[i] = NewPlayer(sp.bMap)
+			t.Logf("constructed tile %d", i)
 			settings.START, settings.END, settings.SKIP = svStart, svEnd, svSkip
 			settings.KNOCKOUTREPLAYS = svKO
 			names[i] = sp.display
 		}
+		t.Logf("leaving CallMain")
 	})
 	if glErr != nil {
 		return glErr
