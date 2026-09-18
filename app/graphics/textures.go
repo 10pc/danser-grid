@@ -27,7 +27,17 @@ var Cross *texture.TextureRegion
 var Hit50 *texture.TextureRegion
 var Hit100 *texture.TextureRegion
 
+var texturesLoaded = false
+
 func LoadTextures() {
+	// Grid: N Players share one process (and one GL context). The atlas
+	// must be created exactly once — a second NewPlayer used to orphan the
+	// first player's regions by rebinding a fresh atlas.
+	if texturesLoaded {
+		return
+	}
+	texturesLoaded = true
+
 	Atlas = texture.NewTextureAtlas(2048, 4)
 	Atlas.Bind(16)
 
