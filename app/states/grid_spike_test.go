@@ -283,6 +283,10 @@ func gridDual(t *testing.T) error {
 				return fmt.Errorf("a tile finished after %dms (maps are minutes long)", i)
 			}
 		}
+		if i < 100 && i%10 == 9 {
+			t.Logf("tick %d: raw=%.1f state=%v", i+1,
+				players[0].rawPositionF, players[0].musicPlayer.GetState())
+		}
 		if i%100 == 99 {
 			t.Logf("tick %d: raw=%.1f prog=%.1f state=%v", i+1,
 				players[0].rawPositionF, players[0].progressMsF,
