@@ -218,6 +218,7 @@ func gridDual(t *testing.T) error {
 	players := make([]*Player, len(specs))
 	names := make([]string, len(specs))
 	var glErr error
+	var win *glfw.Window
 	t.Logf("entering CallMain for GL init + construction")
 	goroutines.CallMain(func() {
 		defer func() {
@@ -231,9 +232,10 @@ func gridDual(t *testing.T) error {
 			return
 		}
 		glfw.WindowHint(glfw.Visible, glfw.False)
-		win, err := glfw.CreateWindow(1920, 1080, "gridspike", nil, nil)
-		if err != nil {
-			glErr = fmt.Errorf("window: %w", err)
+		var cerr error
+		win, cerr = glfw.CreateWindow(1920, 1080, "gridspike", nil, nil)
+		if cerr != nil {
+			glErr = fmt.Errorf("window: %w", cerr)
 			return
 		}
 		win.MakeContextCurrent()
