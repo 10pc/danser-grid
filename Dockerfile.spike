@@ -1,0 +1,17 @@
+# Spike build env: Go toolchain + danser link deps (GL headers, GTK, X11).
+# Usage (on unit-02, from the danser-grid dir):
+#   docker build -f Dockerfile.spike -t danser-grid-spike .
+#   docker run --rm -v "$PWD:/src" danser-grid-spike \
+#     sh -c 'cd /src && go build -o /tmp/danser-stock . && echo STOCK-BUILD-OK'
+FROM golang:1.24-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        libgl1-mesa-dev \
+        libglu1-mesa-dev \
+        xorg-dev \
+        libgtk-3-dev \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
