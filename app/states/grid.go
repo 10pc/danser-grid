@@ -13,6 +13,7 @@ package states
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -195,6 +196,22 @@ func layoutTiles(tiles []*GridTile, tsp []GridTileSpec) {
 	}
 }
 
+// copyFile copies src to dst (os.Rename can't cross bind mounts).
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
+}
+
 // RunGrid renders every span in spec: one ffmpeg encode per span, clocks run
 // continuously across spans (no re-seeks). Runs on the worker thread like
 // mainLoopRecord: ticks and ffmpeg process management happen here, every GL
@@ -283,7 +300,9 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		}
 		raw := ffmpeg.StopVideoSpan()
 		final := filepath.Join(spec.OutDir, span.Name+".mp4")
-		if err := os.Rename(raw, final); err != nil {
+		// Bind mounts count as separate filesystems: rename(2) fails
+		// EXDEV across them, so copy + remove instead.
+		if err := copyFile(raw, final); err != nil {
 			panic(fmt.Sprintf("grid span %s: %v", span.Name, err))
 		}
 		_ = os.RemoveAll(filepath.Join(spec.OutDir, span.Name+"_temp"))
