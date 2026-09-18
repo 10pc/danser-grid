@@ -268,6 +268,11 @@ func gridDual(t *testing.T) error {
 		t.Logf("tile%d: %s", i, names[i])
 	}
 
+	times := make([]float64, len(players))
+	for i, p := range players {
+		times[i] = p.GetTime()
+	}
+	t.Logf("start times (ms): %v", times)
 	for i := 0; i < 600; i++ {
 		for _, p := range players {
 			if done := p.Update(1.0); done {
@@ -275,12 +280,13 @@ func gridDual(t *testing.T) error {
 			}
 		}
 	}
-	times := make([]float64, len(players))
 	for i, p := range players {
-		times[i] = p.GetTime()
-		if times[i] <= 0 {
-			return fmt.Errorf("tile %d clock did not advance", i)
+		after := p.GetTime()
+		// 600 ticks of 1ms must advance the clock ~600ms from a negative lead-in
+		if after-times[i] < 590.0 {
+			return fmt.Errorf("tile %d clock advanced only %.1fms over 600 ticks", i, after-times[i])
 		}
+		times[i] = after
 	}
 	t.Logf("progress after 600 ticks (ms): %v", times)
 	t.Logf("SLICE1 PASS: %d Player(s) coexist with independent controllers and clocks", len(players))
