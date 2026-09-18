@@ -334,15 +334,25 @@ func gridDual(t *testing.T) error {
 		}
 	}
 	t.Logf("clocks at shot: %.0f / %.0f", players[0].GetTime(), players[1].GetTime())
-	// Readback sanity: solid red, no draws — isolates glReadPixels path.
-	fbw, fbh := win.GetFramebufferSize()
-	t.Logf("framebuffer: %dx%d", fbw, fbh)
-	gl.ReadBuffer(gl.BACK)
-	gl.ClearColor(1, 0, 0, 1)
-	gl.Disable(gl.DITHER)
-	gl.Clear(gl.COLOR_BUFFER_BIT)
-	gl.Finish()
-	utils.MakeScreenshot(1920, 1080, "grid-red", false)
+	// ALL GL below runs on the pump thread: this body runs on RunMain's
+	// worker thread, which has no current GL context (reads back black).
+	var drawErr error
+	goroutines.CallMain(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				debug.PrintStack()
+				drawErr = fmt.Errorf("draw/screenshot: %v", r)
+			}
+		}()
+		drawErr = drawTiles(t, players, rects)
+	})
+	if drawErr != nil {
+		return drawErr
+	}
+	shot := filepath.Join(env.DataDir(), "screenshots", "grid-proof.png")
+	if err := assertGridShot(t, shot); err != nil {
+		return err
+	}
 	redShot := filepath.Join(env.DataDir(), "screenshots", "grid-red.png")
 	rf, err := os.Open(redShot)
 	if err != nil {
@@ -356,6 +366,24 @@ func gridDual(t *testing.T) error {
 	rr, _, _, _ := redImg.At(960, 540).RGBA()
 	rq, _, _, _ := redImg.At(100, 100).RGBA()
 	t.Logf("red probe pixels: center R=%d corner R=%d", rr>>8, rq>>8)
+	if rr>>8 < 200 || rq>>8 < 200 {
+		return fmt.Errorf("readback broken: red frame reads back black")
+	}
+	t.Logf("SLICE2 PASS: split-viewport grid renders two distinct playfields")
+	return nil
+}
+
+// drawTiles renders the red readback probe then the static grid.
+// Pump thread only (needs the current GL context).
+func drawTiles(t *testing.T, players []*Player, rects [][4]int) error {
+	fbw, fbh := win.GetFramebufferSize()
+	t.Logf("framebuffer: %dx%d", fbw, fbh)
+	gl.ReadBuffer(gl.BACK)
+	gl.ClearColor(1, 0, 0, 1)
+	gl.Disable(gl.DITHER)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.Finish()
+	utils.MakeScreenshot(1920, 1080, "grid-red", false)
 	gl.ClearColor(0, 0, 0, 1)
 	gl.Enable(gl.SCISSOR_TEST)
 	gl.Disable(gl.DITHER)
@@ -368,11 +396,6 @@ func gridDual(t *testing.T) error {
 	}
 	gl.Finish()
 	utils.MakeScreenshot(1920, 1080, "grid-proof", false)
-	shot := filepath.Join(env.DataDir(), "screenshots", "grid-proof.png")
-	if err := assertGridShot(t, shot); err != nil {
-		return err
-	}
-	t.Logf("SLICE2 PASS: split-viewport grid renders two distinct playfields")
 	return nil
 }
 
