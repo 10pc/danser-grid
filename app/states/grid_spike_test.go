@@ -273,6 +273,10 @@ func gridDual(t *testing.T) error {
 		times[i] = p.GetTime()
 	}
 	t.Logf("start times (ms): %v", times)
+	t.Logf("SPEED=%v GetSpeed=%v musicState=%v start=%v startPoint=%v startPointE=%v",
+		settings.SPEED, players[0].bMap.Diff.GetSpeed(),
+		players[0].musicPlayer.GetState(), players[0].start, players[0].startPoint,
+		players[0].startPointE)
 	for i := 0; i < 600; i++ {
 		for _, p := range players {
 			if done := p.Update(1.0); done {
