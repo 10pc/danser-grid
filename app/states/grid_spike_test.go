@@ -462,10 +462,28 @@ func assertGridShot(t *testing.T, path string) error {
 	if vL < 20 || vR < 20 {
 		return fmt.Errorf("a half is flat: variances %.0f %.0f", vL, vR)
 	}
-	if d := mL - mR; d < -30 || d > 30 {
-		t.Logf("halves differ strongly (%.1f), fine", d)
-	} else if d > -2 && d < 2 {
-		return fmt.Errorf("halves suspiciously identical (means %.1f %.1f)", mL, mR)
+	// mean brightness is a weak discriminator (same skin/BG both sides):
+	// compare mirrored pixels directly — different maps must differ.
+	var diff, n float64
+	for y := 0; y < b.Dy(); y += 11 {
+		for x := 0; x < 960; x += 11 {
+			lr, lg, lb, _ := img.At(x, y).RGBA()
+			rr, rg, rb, _ := img.At(1919-x, y).RGBA()
+			diff += abs(float64(lr)-float64(rr)) + abs(float64(lg)-float64(rg)) + abs(float64(lb)-float64(rb))
+			n += 3
+		}
+	}
+	diff = diff / n / 257
+	t.Logf("mirrored-pixel mean abs diff: %.2f", diff)
+	if diff < 2.0 {
+		return fmt.Errorf("halves suspiciously identical (pixel diff %.2f)", diff)
 	}
 	return nil
+}
+
+func abs(f float64) float64 {
+	if f < 0 {
+		return -f
+	}
+	return f
 }
