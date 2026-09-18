@@ -60,6 +60,11 @@ var player states.State
 // gridBeatmaps holds the loaded map library for grid mode (no single map).
 var gridBeatmaps []*beatmap.BeatMap
 
+// gridSpecPath carries the -grid spec into the dispatch level, where RunGrid
+// executes on the worker thread (mirroring mainLoopRecord). It must NOT run
+// inside the init closure: nested CallMains would deadlock the main pump.
+var gridSpecPath string
+
 var scheduleScreenshot = false
 
 var batch *batch2.QuadBatch
@@ -618,7 +623,7 @@ func run() {
 		}
 
 		if settings.GRID {
-			states.RunGrid(*grid, gridBeatmaps)
+			gridSpecPath = *grid
 		} else {
 			if modsNew != nil {
 				beatMap.Diff.SetMods2(modsNew)
@@ -636,7 +641,7 @@ func run() {
 	})
 
 	if settings.GRID {
-		// RunGrid rendered every span already; nothing left to loop.
+		states.RunGrid(gridSpecPath, gridBeatmaps)
 	} else if recordMode {
 		mainLoopRecord()
 	} else if screenshotMode {

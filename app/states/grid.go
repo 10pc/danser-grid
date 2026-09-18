@@ -26,6 +26,7 @@ import (
 	"github.com/wieku/danser-go/app/settings"
 	"github.com/wieku/danser-go/framework/graphics/buffer"
 	"github.com/wieku/danser-go/framework/graphics/viewport"
+	"github.com/wieku/danser-go/framework/goroutines"
 	"github.com/wieku/rplpa"
 )
 
@@ -195,7 +196,9 @@ func layoutTiles(tiles []*GridTile, tsp []GridTileSpec) {
 }
 
 // RunGrid renders every span in spec: one ffmpeg encode per span, clocks run
-// continuously across spans (no re-seeks). Must run on the main thread.
+// continuously across spans (no re-seeks). Runs on the worker thread like
+// mainLoopRecord: ticks and ffmpeg process management happen here, every GL
+// touch (construction, draws, frame capture) goes through the main pump.
 func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 	spec, err := loadGridSpec(specPath)
 	if err != nil {
@@ -210,22 +213,35 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 
 	settings.Playfield.DrawCursors = false // M1: cursor trails land in M2
 
+	// GL init block on the pump thread: shared FBO + all tile players.
+	var fbo *buffer.Framebuffer
 	byReplay := map[string]*GridTile{}
-	built, err := buildGridTiles(spec, beatmaps)
-	if err != nil {
-		panic(err)
-	}
-	for _, t := range built {
-		byReplay[t.replay] = t
+	var initErr error
+	goroutines.CallMain(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				initErr = fmt.Errorf("grid init: %v", r)
+			}
+		}()
+		// Offscreen target (mirrors mainLoopRecord): window size is
+		// irrelevant, the spec canvas rules.
+		fbo = buffer.NewFrameMultisampleScreen(spec.Width, spec.Height, false, 0)
+		built, err := buildGridTiles(spec, beatmaps)
+		if err != nil {
+			initErr = err
+			return
+		}
+		for _, t := range built {
+			byReplay[t.replay] = t
+		}
+	})
+	if initErr != nil {
+		panic(initErr)
 	}
 
 	if err := os.MkdirAll(spec.OutDir, 0755); err != nil {
 		panic(err)
 	}
-
-	// Offscreen target (mirrors mainLoopRecord): window size is irrelevant,
-	// the spec canvas rules. MSAA is off in our profiles (single-sample FBO).
-	fbo := buffer.NewFrameMultisampleScreen(spec.Width, spec.Height, false, 0)
 
 	for si, span := range spec.Spans {
 		spanMs := (span.End - span.Start) * 1000
@@ -260,24 +276,7 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 			elapsed += updateDelta
 			deltaSumF += updateDelta
 			if deltaSumF >= fpsDelta {
-				fbo.Bind()
-				ffmpeg.PreFrame()
-				viewport.Push(spec.Width, spec.Height)
-				gl.ClearColor(0, 0, 0, 1)
-				gl.Enable(gl.SCISSOR_TEST)
-				gl.Disable(gl.DITHER)
-				gl.Clear(gl.COLOR_BUFFER_BIT)
-				for _, t := range active {
-					if t.done {
-						continue
-					}
-					viewport.PushPos(t.rect[0], t.rect[1], t.rect[2], t.rect[3])
-					t.player.Draw(0)
-					viewport.Pop()
-				}
-				viewport.Pop()
-				ffmpeg.MakeFrame()
-				fbo.Unbind()
+				drawGridFrame(fbo, active, spec.Width, spec.Height)
 				deltaSumF -= fpsDelta
 				frames++
 			}
@@ -291,4 +290,29 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		log.Printf("grid span %s: %d frames -> %s", span.Name, frames, final)
 	}
 	log.Println("grid: all spans rendered")
+}
+
+// drawGridFrame renders one grid frame into the span FBO and pushes it to
+// the encoder. Pump thread only (GL context).
+func drawGridFrame(fbo *buffer.Framebuffer, active []*GridTile, width, height int) {
+	goroutines.CallMain(func() {
+		fbo.Bind()
+		ffmpeg.PreFrame()
+		viewport.Push(width, height)
+		gl.ClearColor(0, 0, 0, 1)
+		gl.Enable(gl.SCISSOR_TEST)
+		gl.Disable(gl.DITHER)
+		gl.Clear(gl.COLOR_BUFFER_BIT)
+		for _, t := range active {
+			if t.done {
+				continue
+			}
+			viewport.PushPos(t.rect[0], t.rect[1], t.rect[2], t.rect[3])
+			t.player.Draw(0)
+			viewport.Pop()
+		}
+		viewport.Pop()
+		ffmpeg.MakeFrame()
+		fbo.Unbind()
+	})
 }
