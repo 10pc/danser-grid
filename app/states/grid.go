@@ -104,7 +104,7 @@ func buildGridTiles(spec *GridSpec, beatmaps []*beatmap.BeatMap) ([]*GridTile, e
 			if _, ok := seen[ts.Replay]; ok {
 				continue
 			}
-			rp, bMap, err := resolveGridReplay(ts.Replay, beatmaps)
+			_, bMap, err := resolveGridReplay(ts.Replay, beatmaps)
 			if err != nil {
 				return nil, err
 			}
