@@ -1,8 +1,8 @@
 //go:build gridspike
 
-// Spike slice 1: two Players (different maps) coexist in one process.
-// Construction-only proof: shared atlas, independent controllers/clocks.
-// No drawing yet (slice 2), default clock rate (slice 3).
+// Spike slices 1+2: two Players (different maps) coexist, tick independently,
+// and render side-by-side tiles into one framebuffer (screenshot proof).
+// No cursor pass yet (slice 2b), default clock rate (slice 3).
 //
 // GL discipline: danser's goroutines package owns the main thread.
 // Everything touching GL (window, context, textures, NewPlayer) runs inside
@@ -13,24 +13,29 @@ package states
 
 import (
 	"fmt"
+	"image/png"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
 
+	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/wieku/danser-go/app/beatmap"
 	difficulty2 "github.com/wieku/danser-go/app/beatmap/difficulty"
 	"github.com/wieku/danser-go/app/database"
 	"github.com/wieku/danser-go/app/input"
 	"github.com/wieku/danser-go/app/settings"
+	"github.com/wieku/danser-go/app/utils"
 	"github.com/wieku/danser-go/framework/assets"
 	"github.com/wieku/danser-go/framework/bass"
 	"github.com/wieku/danser-go/framework/env"
 	"github.com/wieku/danser-go/framework/graphics/font"
 	"github.com/wieku/danser-go/framework/graphics/shader"
+	"github.com/wieku/danser-go/framework/graphics/viewport"
 	"github.com/wieku/danser-go/framework/goroutines"
 	"github.com/wieku/danser-go/framework/platform"
 	"github.com/wieku/rplpa"
@@ -141,6 +146,11 @@ func gridDual(t *testing.T) error {
 	settings.KNOCKOUT = true
 	settings.DIVIDES = 1
 	settings.TAG = 1
+	// Slice 2: no cursor pass (per-tile cursor FBOs are slice 2b), no
+	// fullscreen effects (agreed MVP-offs) — playfields, HUD and dim BG only.
+	settings.Playfield.DrawCursors = false
+	settings.Playfield.Bloom.Enabled = false
+	settings.Playfield.Background.Blur.Enabled = false
 	settings.General.OsuSongsDir = songsDir
 	settings.Audio.OnlineOffset = false
 	settings.Playfield.SeizureWarning.Enabled = false
@@ -304,5 +314,109 @@ func gridDual(t *testing.T) error {
 	}
 	t.Logf("progress after 600 ticks (ms): %v", times)
 	t.Logf("SLICE1 PASS: %d Player(s) coexist with independent controllers and clocks", len(players))
+
+	// ---- slice 2: static split-viewport grid + screenshot ----
+	rects := [][4]int{{0, 0, 960, 1080}, {960, 0, 960, 1080}}
+	if len(players) != len(rects) {
+		return fmt.Errorf("spike grid supports exactly 2 tiles")
+	}
+	for i, p := range players {
+		retile(p, rects[i])
+	}
+	// advance both clocks 15s in (gameplay active on both maps)
+	for i := 0; i < 14400; i++ {
+		for _, p := range players {
+			if done := p.Update(1.0); done {
+				return fmt.Errorf("a tile finished early at tick %d", i)
+			}
+		}
+	}
+	t.Logf("clocks at shot: %.0f / %.0f", players[0].GetTime(), players[1].GetTime())
+	gl.ClearColor(0, 0, 0, 1)
+	gl.Enable(gl.SCISSOR_TEST)
+	gl.Disable(gl.DITHER)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+	for i, p := range players {
+		r := rects[i]
+		viewport.PushPos(r[0], r[1], r[2], r[3])
+		p.Draw(0)
+		viewport.Pop()
+	}
+	gl.Finish()
+	utils.MakeScreenshot(1920, 1080, "grid-proof", false)
+	shot := filepath.Join(env.DataDir(), "screenshots", "grid-proof.png")
+	if err := assertGridShot(t, shot); err != nil {
+		return err
+	}
+	t.Logf("SLICE2 PASS: split-viewport grid renders two distinct playfields")
+	return nil
+}
+
+// retile sizes a player's cameras to an absolute tile rect (pixels).
+func retile(p *Player, r [4]int) {
+	_, _, w, h := r[0], r[1], r[2], r[3]
+	sc := settings.Playfield.Scale
+	p.mainCamera.SetOsuViewport(w, h, sc, true, settings.Playfield.OsuShift)
+	p.mainCamera.Update()
+	p.objectCamera.SetOsuViewport(w, h, sc, true, settings.Playfield.OsuShift)
+	p.objectCamera.Update()
+	sbScale := 1.0
+	if settings.Playfield.ScaleStoryboardWithPlayfield {
+		sbScale = sc
+	}
+	p.bgCamera.SetOsuViewport(w, h, sbScale,
+		!settings.Playfield.OsuShift && settings.Playfield.MoveStoryboardWithPlayfield, false)
+	p.bgCamera.Update()
+	p.uiCamera.SetViewport(w, h, true)
+	p.uiCamera.SetViewportF(0, h, w, 0)
+	p.uiCamera.Update()
+}
+
+// assertGridShot checks a 1920x1080 PNG: both halves non-black with content,
+// and the halves differ (different maps).
+func assertGridShot(t *testing.T, path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("screenshot missing: %w", err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+	b := img.Bounds()
+	if b.Dx() != 1920 || b.Dy() != 1080 {
+		return fmt.Errorf("want 1920x1080, got %dx%d", b.Dx(), b.Dy())
+	}
+	stats := func(x0, x1 int) (mean, variance float64) {
+		var n int64
+		var sum, sum2 float64
+		for y := 0; y < b.Dy(); y += 7 {
+			for x := x0; x < x1; x += 7 {
+				rr, gg, bb, _ := img.At(x, y).RGBA()
+				v := float64(rr+gg+bb) / (3 * 257)
+				sum += v
+				sum2 += v * v
+				n++
+			}
+		}
+		mean = sum / float64(n)
+		variance = sum2/float64(n) - mean*mean
+		return mean, variance
+	}
+	mL, vL := stats(0, 960)
+	mR, vR := stats(960, 1920)
+	t.Logf("halves mean/var: L=%.1f/%.0f R=%.1f/%.0f", mL, vL, mR, vR)
+	if mL < 3 || mR < 3 {
+		return fmt.Errorf("a half is (near-)black: means %.1f %.1f", mL, mR)
+	}
+	if vL < 20 || vR < 20 {
+		return fmt.Errorf("a half is flat: variances %.0f %.0f", vL, vR)
+	}
+	if d := mL - mR; d < -30 || d > 30 {
+		t.Logf("halves differ strongly (%.1f), fine", d)
+	} else if d > -2 && d < 2 {
+		return fmt.Errorf("halves suspiciously identical (means %.1f %.1f)", mL, mR)
+	}
 	return nil
 }
