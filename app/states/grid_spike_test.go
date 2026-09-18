@@ -13,6 +13,7 @@ package states
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/wieku/danser-go/framework/bass"
 	"github.com/wieku/danser-go/framework/env"
 	"github.com/wieku/danser-go/framework/graphics/font"
+	"github.com/wieku/danser-go/framework/graphics/shader"
 	"github.com/wieku/danser-go/framework/goroutines"
 	"github.com/wieku/danser-go/framework/platform"
 	"github.com/wieku/rplpa"
@@ -47,6 +49,73 @@ func TestGridDual(t *testing.T) {
 			t.Fatalf("slice1: %v", err)
 		}
 	})
+}
+
+func TestShaderRepeat(t *testing.T) {
+	goroutines.RunMain(func() {
+		if err := shaderRepeat(t); err != nil {
+			t.Fatalf("shader-repeat: %v", err)
+		}
+	})
+}
+
+func shaderRepeat(t *testing.T) error {
+	var glErr error
+	goroutines.CallMain(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				debug.PrintStack()
+				glErr = fmt.Errorf("setup: %v", r)
+			}
+		}()
+		if err := glfw.Init(); err != nil {
+			glErr = fmt.Errorf("glfw: %w", err)
+			return
+		}
+		glfw.WindowHint(glfw.Visible, glfw.False)
+		win, err := glfw.CreateWindow(1920, 1080, "gridspike", nil, nil)
+		if err != nil {
+			glErr = fmt.Errorf("window: %w", err)
+			return
+		}
+		win.MakeContextCurrent()
+		if err := platform.GLInit(false); err != nil {
+			glErr = fmt.Errorf("gl: %w", err)
+			return
+		}
+		assets.Init(true)
+		src, err := assets.Open("assets/shaders/slidercaps.vsh")
+		if err != nil {
+			glErr = fmt.Errorf("asset: %w", err)
+			return
+		}
+		raw, err := io.ReadAll(src)
+		_ = src.Close()
+		if err != nil {
+			glErr = fmt.Errorf("read: %w", err)
+			return
+		}
+		t.Logf("source bytes: %d", len(raw))
+		for i := 0; i < 4; i++ {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						glErr = fmt.Errorf("compile %d panicked: %v", i, r)
+					}
+				}()
+				s := shader.NewSource(string(raw), shader.Vertex)
+				_ = s
+				t.Logf("compile %d: no panic", i)
+				s.Dispose()
+			}()
+			if glErr != nil {
+				return glErr
+			}
+		}
+		t.Logf("SHADER-REPEAT PASS")
+		return nil
+	})
+	return glErr
 }
 
 func gridDual(t *testing.T) error {
