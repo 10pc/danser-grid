@@ -22,6 +22,7 @@ import (
 	"github.com/wieku/danser-go/app/settings"
 	"github.com/wieku/danser-go/framework/assets"
 	"github.com/wieku/danser-go/framework/bass"
+	"github.com/wieku/danser-go/framework/env"
 	"github.com/wieku/danser-go/framework/graphics/font"
 	"github.com/wieku/danser-go/framework/platform"
 	"github.com/wieku/rplpa"
@@ -46,6 +47,7 @@ func TestGridDual(t *testing.T) {
 	}
 
 	// --- minimal app.go init sequence (record-mode semantics) ---
+	env.Init("danser")
 	settings.LoadSettings("")
 
 	settings.RECORD = true
