@@ -14,6 +14,7 @@ package states
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -135,6 +136,7 @@ func gridDual(t *testing.T) error {
 	goroutines.CallMain(func() {
 		defer func() {
 			if r := recover(); r != nil {
+				debug.PrintStack()
 				glErr = fmt.Errorf("gl init/construct: %v", r)
 			}
 		}()
