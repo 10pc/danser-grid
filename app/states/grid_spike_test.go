@@ -97,14 +97,15 @@ func shaderRepeat(t *testing.T) error {
 			return
 		}
 		t.Logf("source bytes: %d", len(raw))
-		for i := 0; i < 4; i++ {
+		trivial := "#version 330\nvoid main(){gl_Position = vec4(0.0);}\n"
+		for i, src := range []string{trivial, string(raw), string(raw)} {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
 						glErr = fmt.Errorf("compile %d panicked: %v", i, r)
 					}
 				}()
-				s := shader.NewSource(string(raw), shader.Vertex)
+				s := shader.NewSource(src, shader.Vertex)
 				_ = s
 				t.Logf("compile %d: no panic", i)
 				s.Dispose()
