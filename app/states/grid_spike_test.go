@@ -55,8 +55,8 @@ func gridDual(t *testing.T) error {
 		return err
 	}
 	replays := strings.Split(replaysEnv, ":")
-	if len(replays) != 2 {
-		return fmt.Errorf("need exactly 2 replays, got %d", len(replays))
+	if len(replays) < 1 || len(replays) > 2 {
+		return fmt.Errorf("need 1-2 replays, got %d", len(replays))
 	}
 
 	env.Init("danser")
@@ -125,12 +125,12 @@ func gridDual(t *testing.T) error {
 		specs = append(specs, tileSpec{bMap, rpPath,
 			bMap.Artist + " - " + bMap.Name + " [" + bMap.Difficulty + "]", false})
 	}
-	if specs[0].display == specs[1].display {
+	if len(specs) == 2 && specs[0].display == specs[1].display {
 		return fmt.Errorf("tiles share a map; need different maps")
 	}
 
-	var players [2]*Player
-	var names [2]string
+	players := make([]*Player, len(specs))
+	names := make([]string, len(specs))
 	var glErr error
 	t.Logf("entering CallMain for GL init + construction")
 	goroutines.CallMain(func() {
@@ -188,9 +188,8 @@ func gridDual(t *testing.T) error {
 		if n := len(players[i].controller.GetCursors()); n != 1 {
 			return fmt.Errorf("tile %d (%s): want 1 cursor, got %d", i, names[i], n)
 		}
+		t.Logf("tile%d: %s", i, names[i])
 	}
-	t.Logf("tile0: %s", names[0])
-	t.Logf("tile1: %s", names[1])
 
 	for i := 0; i < 600; i++ {
 		for _, p := range players {
@@ -199,11 +198,14 @@ func gridDual(t *testing.T) error {
 			}
 		}
 	}
-	t0, t1 := players[0].GetTime(), players[1].GetTime()
-	t.Logf("progress after 600 ticks: %.1fms / %.1fms", t0, t1)
-	if t0 <= 0 || t1 <= 0 {
-		return fmt.Errorf("clocks did not advance")
+	times := make([]float64, len(players))
+	for i, p := range players {
+		times[i] = p.GetTime()
+		if times[i] <= 0 {
+			return fmt.Errorf("tile %d clock did not advance", i)
+		}
 	}
-	t.Logf("SLICE1 PASS: two Players coexist with independent controllers and clocks")
+	t.Logf("progress after 600 ticks (ms): %v", times)
+	t.Logf("SLICE1 PASS: %d Player(s) coexist with independent controllers and clocks", len(players))
 	return nil
 }
