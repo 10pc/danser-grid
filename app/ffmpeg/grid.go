@@ -21,6 +21,8 @@ func spanTempDir() string {
 // StartVideoSpan begins a video-only span encode writing to
 // <outdir>/<name>_temp/video.<container>.
 func StartVideoSpan(fps, w, h int, name string) {
+	preCheck()
+
 	output = name
 
 	_ = os.RemoveAll(spanTempDir())
