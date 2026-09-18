@@ -109,11 +109,10 @@ func shaderRepeat(t *testing.T) error {
 				s.Dispose()
 			}()
 			if glErr != nil {
-				return glErr
+				return
 			}
 		}
 		t.Logf("SHADER-REPEAT PASS")
-		return nil
 	})
 	return glErr
 }
