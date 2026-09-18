@@ -289,7 +289,8 @@ func run() {
 		settings.KNOCKOUTREPLAYS = knockoutReplays
 		settings.PLAY = *play
 		settings.DIVIDES = *cursors
-		settings.TAG = *tag		settings.SPEED = *speed
+		settings.TAG = *tag
+		settings.SPEED = *speed
 		settings.PITCH = *pitch
 		settings.SKIP = *skip
 		settings.START = *start
