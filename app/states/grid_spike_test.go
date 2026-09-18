@@ -24,7 +24,7 @@ import (
 	"github.com/wieku/danser-go/app/settings"
 	"github.com/wieku/danser-go/framework/assets"
 	"github.com/wieku/danser-go/framework/bass"
-	"github.com/wieku/danser-go/framework/goroutines"
+	"github.com/wieku/danser-go/framework/env"
 	"github.com/wieku/danser-go/framework/graphics/font"
 	"github.com/wieku/danser-go/framework/platform"
 	"github.com/wieku/rplpa"
@@ -57,6 +57,7 @@ func gridDual(t *testing.T) error {
 		return fmt.Errorf("need exactly 2 replays, got %d", len(replays))
 	}
 
+	env.Init("danser")
 	settings.LoadSettings("")
 	settings.RECORD = true
 	settings.KNOCKOUT = true
