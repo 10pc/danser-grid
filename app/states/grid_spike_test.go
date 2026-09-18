@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -44,6 +45,10 @@ func mustEnvGL() (string, string, error) {
 }
 
 func TestGridDual(t *testing.T) {
+	// The RunMain pump + every CallMain closure must execute on ONE OS
+	// thread: the GL context is current per-thread, and a migrated pump
+	// silently loses it (MAX_TEXTURE_SIZE reads 0, later compiles die).
+	runtime.LockOSThread()
 	goroutines.RunMain(func() {
 		if err := gridDual(t); err != nil {
 			t.Fatalf("slice1: %v", err)
