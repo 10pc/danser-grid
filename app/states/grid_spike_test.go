@@ -24,6 +24,7 @@ import (
 	"github.com/wieku/danser-go/app/beatmap"
 	difficulty2 "github.com/wieku/danser-go/app/beatmap/difficulty"
 	"github.com/wieku/danser-go/app/database"
+	"github.com/wieku/danser-go/app/input"
 	"github.com/wieku/danser-go/app/settings"
 	"github.com/wieku/danser-go/framework/assets"
 	"github.com/wieku/danser-go/framework/bass"
@@ -226,6 +227,7 @@ func gridDual(t *testing.T) error {
 			return
 		}
 		win.MakeContextCurrent()
+		input.Win = win
 		if err := platform.GLInit(false); err != nil {
 			glErr = fmt.Errorf("gl: %w", err)
 			return
