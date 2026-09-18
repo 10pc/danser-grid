@@ -346,7 +346,7 @@ func gridDual(t *testing.T) error {
 				drawErr = fmt.Errorf("draw/screenshot: %v", r)
 			}
 		}()
-		drawErr = drawTiles(t, players, rects)
+		drawErr = drawTiles(t, players, rects, "proof")
 	})
 	if drawErr != nil {
 		return drawErr
@@ -372,12 +372,69 @@ func gridDual(t *testing.T) error {
 		return fmt.Errorf("readback broken: red frame reads back black")
 	}
 	t.Logf("SLICE2 PASS: split-viewport grid renders two distinct playfields")
+
+	// ---- slice 3: independent rates, mid-map seek, determinism ----
+	// Same DT maps driven at different deltas: tile0 at grid rate, tile1
+	// at 1.5x. Update(delta) IS the rate mechanism (music stopped, so raw
+	// advances by exactly delta); the MVP will use a speed field instead.
+	r0, r1 := players[0].rawPositionF, players[1].rawPositionF
+	for i := 0; i < 600; i++ {
+		if done := players[0].Update(1.0); done {
+			return fmt.Errorf("tile0 finished during rate probe")
+		}
+		if done := players[1].Update(1.5); done {
+			return fmt.Errorf("tile1 finished during rate probe")
+		}
+	}
+	d0, d1 := players[0].rawPositionF-r0, players[1].rawPositionF-r1
+	t.Logf("600 mixed ticks: tile0 +%.1fms (want ~600), tile1 +%.1fms (want ~900)", d0, d1)
+	if d0 < 595 || d0 > 605 || d1 < 895 || d1 > 905 {
+		return fmt.Errorf("rate control off: deltas %.1f %.1f", d0, d1)
+	}
+	t.Logf("SLICE3a PASS: per-tile independent advance rates")
+
+	// Seek tile1 20s deeper (span-start proof); tile0 holds still.
+	for i := 0; i < 20000; i++ {
+		if done := players[1].Update(1.0); done {
+			return fmt.Errorf("tile1 finished during seek at tick %d", i)
+		}
+	}
+	t.Logf("tile1 sought to %.0fms, tile0 holds at %.0fms",
+		players[1].GetTime(), players[0].GetTime())
+	t.Logf("SLICE3b PASS: mid-map seek without disturbing the other tile")
+
+	// Determinism: same clocks, two draws, byte-identical PNGs.
+	if err := drawTiles(t, players, rects, "d1"); err != nil {
+		return err
+	}
+	if err := drawTiles(t, players, rects, "d2"); err != nil {
+		return err
+	}
+	shotDir := filepath.Join(env.DataDir(), "screenshots")
+	b1, err := os.ReadFile(filepath.Join(shotDir, "grid-d1.png"))
+	if err != nil {
+		return fmt.Errorf("shot d1 missing: %w", err)
+	}
+	b2, err := os.ReadFile(filepath.Join(shotDir, "grid-d2.png"))
+	if err != nil {
+		return fmt.Errorf("shot d2 missing: %w", err)
+	}
+	if len(b1) != len(b2) {
+		return fmt.Errorf("determinism: sizes differ %d vs %d", len(b1), len(b2))
+	}
+	for i := range b1 {
+		if b1[i] != b2[i] {
+			return fmt.Errorf("determinism: byte %d differs", i)
+		}
+	}
+	t.Logf("SLICE3c PASS: identical frames from identical clocks (%d bytes)", len(b1))
+	t.Logf("SLICE3 PASS: rates, seek, determinism")
 	return nil
 }
 
 // drawTiles renders the red readback probe then the static grid.
 // Pump thread only (needs the current GL context).
-func drawTiles(t *testing.T, players []*Player, rects [][4]int) error {
+func drawTiles(t *testing.T, players []*Player, rects [][4]int, tag string) error {
 	fbw, fbh := spikeWin.GetFramebufferSize()
 	t.Logf("framebuffer: %dx%d", fbw, fbh)
 	gl.ReadBuffer(gl.BACK)
@@ -385,7 +442,7 @@ func drawTiles(t *testing.T, players []*Player, rects [][4]int) error {
 	gl.Disable(gl.DITHER)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.Finish()
-	utils.MakeScreenshot(1920, 1080, "grid-red", false)
+	utils.MakeScreenshot(1920, 1080, "grid-red-"+tag, false)
 	gl.ClearColor(0, 0, 0, 1)
 	gl.Enable(gl.SCISSOR_TEST)
 	gl.Disable(gl.DITHER)
@@ -397,7 +454,7 @@ func drawTiles(t *testing.T, players []*Player, rects [][4]int) error {
 		viewport.Pop()
 	}
 	gl.Finish()
-	utils.MakeScreenshot(1920, 1080, "grid-proof", false)
+	utils.MakeScreenshot(1920, 1080, "grid-"+tag, false)
 	return nil
 }
 
