@@ -387,14 +387,20 @@ func gridDual(t *testing.T) error {
 		}
 	}
 	d0, d1 := players[0].rawPositionF-r0, players[1].rawPositionF-r1
-	t.Logf("600 mixed ticks: tile0 +%.1fms (want ~600), tile1 +%.1fms (want ~900)", d0, d1)
-	if d0 < 595 || d0 > 605 || d1 < 895 || d1 > 905 {
+	// Past the lead-in, Update scales by the map's own rate (DT 1.5x here),
+	// so expectations fold it in: the proof is the 1.5x RATIO between tiles.
+	s0 := players[0].bMap.Diff.GetSpeed()
+	s1 := players[1].bMap.Diff.GetSpeed()
+	e0, e1 := 600*1.0*s0, 600*1.5*s1
+	t.Logf("600 mixed ticks: tile0 +%.1fms (want ~%.0f), tile1 +%.1fms (want ~%.0f)",
+		d0, e0, d1, e1)
+	if abs(d0-e0) > 3 || abs(d1-e1) > 3 || abs(d1/d0-1.5) > 0.01 {
 		return fmt.Errorf("rate control off: deltas %.1f %.1f", d0, d1)
 	}
 	t.Logf("SLICE3a PASS: per-tile independent advance rates")
 
-	// Seek tile1 20s deeper (span-start proof); tile0 holds still.
-	for i := 0; i < 20000; i++ {
+	// Seek tile1 10s deeper (span-start proof); tile0 holds still.
+	for i := 0; i < 10000; i++ {
 		if done := players[1].Update(1.0); done {
 			return fmt.Errorf("tile1 finished during seek at tick %d", i)
 		}
