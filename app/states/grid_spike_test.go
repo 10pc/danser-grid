@@ -41,6 +41,9 @@ import (
 	"github.com/wieku/rplpa"
 )
 
+// spikeWin holds the hidden GL window for pump-thread drawing (drawTiles).
+var spikeWin *glfw.Window
+
 func mustEnvGL() (string, string, error) {
 	songsDir := os.Getenv("SPIKE_SONGS")
 	replays := os.Getenv("SPIKE_REPLAYS")
@@ -218,7 +221,6 @@ func gridDual(t *testing.T) error {
 	players := make([]*Player, len(specs))
 	names := make([]string, len(specs))
 	var glErr error
-	var win *glfw.Window
 	t.Logf("entering CallMain for GL init + construction")
 	goroutines.CallMain(func() {
 		defer func() {
@@ -233,13 +235,13 @@ func gridDual(t *testing.T) error {
 		}
 		glfw.WindowHint(glfw.Visible, glfw.False)
 		var cerr error
-		win, cerr = glfw.CreateWindow(1920, 1080, "gridspike", nil, nil)
+		spikeWin, cerr = glfw.CreateWindow(1920, 1080, "gridspike", nil, nil)
 		if cerr != nil {
 			glErr = fmt.Errorf("window: %w", cerr)
 			return
 		}
-		win.MakeContextCurrent()
-		input.Win = win
+		spikeWin.MakeContextCurrent()
+		input.Win = spikeWin
 		if err := platform.GLInit(false); err != nil {
 			glErr = fmt.Errorf("gl: %w", err)
 			return
@@ -376,7 +378,7 @@ func gridDual(t *testing.T) error {
 // drawTiles renders the red readback probe then the static grid.
 // Pump thread only (needs the current GL context).
 func drawTiles(t *testing.T, players []*Player, rects [][4]int) error {
-	fbw, fbh := win.GetFramebufferSize()
+	fbw, fbh := spikeWin.GetFramebufferSize()
 	t.Logf("framebuffer: %dx%d", fbw, fbh)
 	gl.ReadBuffer(gl.BACK)
 	gl.ClearColor(1, 0, 0, 1)
