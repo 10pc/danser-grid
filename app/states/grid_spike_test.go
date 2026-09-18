@@ -60,6 +60,7 @@ func TestShaderRepeat(t *testing.T) {
 }
 
 func shaderRepeat(t *testing.T) error {
+	env.Init("danser")
 	var glErr error
 	goroutines.CallMain(func() {
 		defer func() {
