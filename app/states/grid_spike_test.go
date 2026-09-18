@@ -270,9 +270,9 @@ func gridDual(t *testing.T) error {
 
 	times := make([]float64, len(players))
 	for i, p := range players {
-		times[i] = p.GetTime()
+		times[i] = p.rawPositionF
 	}
-	t.Logf("start times (ms): %v", times)
+	t.Logf("start raws (ms): %v", times)
 	t.Logf("SPEED=%v DiffGetSpeed=%v musicState=%v start=%v startPoint=%v startPointE=%v version=%v",
 		settings.SPEED, players[0].bMap.Diff.GetSpeed(),
 		players[0].musicPlayer.GetState(), players[0].start, players[0].startPoint,
@@ -294,8 +294,9 @@ func gridDual(t *testing.T) error {
 		}
 	}
 	for i, p := range players {
-		after := p.GetTime()
-		// 600 ticks of 1ms must advance the clock ~600ms from a negative lead-in
+		after := p.rawPositionF
+		// 600 ticks of 1ms must advance the raw clock ~600ms. (GetTime lags
+		// raw by oldOffset on old-format maps; raw is the exact quantity.)
 		if after-times[i] < 590.0 {
 			return fmt.Errorf("tile %d clock advanced only %.1fms over 600 ticks", i, after-times[i])
 		}
