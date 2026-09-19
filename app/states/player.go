@@ -643,7 +643,13 @@ func (player *Player) trySetupFail() {
 func (player *Player) Update(delta float64) bool {
 	speed := 1.0
 
-	if player.musicPlayer.GetState() == bass.MusicPlaying {
+	if settings.GRID {
+		// Grid spans are video-only: the track is virtual and never reaches
+		// MusicPlaying in record mode, so the track branch below would pin
+		// rate mods (DT/HT) at 1.0x. Drive straight off the map rate instead,
+		// exactly what the stopped-track branch computes.
+		speed = settings.SPEED * player.bMap.Diff.GetSpeed()
+	} else if player.musicPlayer.GetState() == bass.MusicPlaying {
 		speed = player.musicPlayer.GetSpeed()
 	} else if !(player.progressMsF < player.startPointE || player.start) {
 		speed = settings.SPEED * player.bMap.Diff.GetSpeed()
