@@ -438,6 +438,12 @@ func gridDual(t *testing.T) error {
 	t.Logf("SLICE3 PASS: rates, seek, determinism")
 
 	// ---- slice 2b: cursor layer paints (same clocks, cursor flag flip) ----
+	for i, p := range players {
+		for _, g := range p.controller.GetCursors() {
+			t.Logf("tile%d cursor pos=(%.0f,%.0f) broken=%v", i,
+				g.Position.X, g.Position.Y, p.overlay.IsBroken(g))
+		}
+	}
 	settings.Playfield.DrawCursors = true
 	if err := drawTiles(t, players, rects, "cur-on"); err != nil {
 		return err
