@@ -411,10 +411,25 @@ func gridDual(t *testing.T) error {
 	t.Logf("SLICE3b PASS: mid-map seek without disturbing the other tile")
 
 	// Determinism: same clocks, two draws, byte-identical PNGs.
-	if err := drawTiles(t, players, rects, "d1"); err != nil {
+	// Determinism: same clocks, two draws on the PUMP thread (worker thread
+	// has no GL context — undrawn black would compare trivially equal).
+	draw2 := func(tag string) error {
+		var drawErr error
+		goroutines.CallMain(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					debug.PrintStack()
+					drawErr = fmt.Errorf("draw %s: %v", tag, r)
+				}
+			}()
+			drawErr = drawTiles(t, players, rects, tag)
+		})
+		return drawErr
+	}
+	if err := draw2("d1"); err != nil {
 		return err
 	}
-	if err := drawTiles(t, players, rects, "d2"); err != nil {
+	if err := draw2("d2"); err != nil {
 		return err
 	}
 	shotDir := filepath.Join(env.DataDir(), "screenshots")
@@ -448,11 +463,11 @@ func gridDual(t *testing.T) error {
 		}
 	}
 	settings.Playfield.DrawCursors = true
-	if err := drawTiles(t, players, rects, "cur-on"); err != nil {
+	if err := draw2("cur-on"); err != nil {
 		return err
 	}
 	settings.Playfield.DrawCursors = false
-	if err := drawTiles(t, players, rects, "cur-off"); err != nil {
+	if err := draw2("cur-off"); err != nil {
 		return err
 	}
 	diff, err := shotDiff(

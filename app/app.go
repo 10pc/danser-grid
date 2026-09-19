@@ -305,6 +305,9 @@ func run() {
 			// One cursor per tile; mirror collage would multiply every tile.
 			settings.DIVIDES = 1
 			settings.TAG = 1
+			// Tiles are replay playbacks: without this they get a generic
+			// controller, no overlay, and cursor fades timed to map end.
+			settings.KNOCKOUT = true
 			recordMode = true
 		}
 		settings.RECORD = recordMode || screenshotMode
