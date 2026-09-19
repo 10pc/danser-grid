@@ -200,6 +200,9 @@ func layoutTiles(tiles []*GridTile, tsp []GridTileSpec) {
 	}
 }
 
+// gridCursorLogged gates a one-shot cursor diagnostic.
+var gridCursorLogged = false
+
 // copyFile copies src to dst (os.Rename can't cross bind mounts).
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)

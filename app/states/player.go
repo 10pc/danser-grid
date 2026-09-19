@@ -919,6 +919,14 @@ func (player *Player) DrawMain(float64) {
 			g.UpdateRenderer()
 		}
 
+		if settings.GRID && !gridCursorLogged {
+			gridCursorLogged = true
+			for _, g := range player.controller.GetCursors() {
+				log.Printf("grid-cursor: pos=%.0f,%.0f alpha=%.2f",
+					g.Position.X, g.Position.Y, cursorColors[0].A)
+			}
+		}
+
 		player.batch.SetAdditive(false)
 
 		graphics.BeginCursorRender()
