@@ -391,6 +391,14 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 				drawGridFrame(fbo, active, spec.Width, spec.Height)
 				deltaSumF -= fpsDelta
 				frames++
+				if os.Getenv("GRID_TRACE") != "" && frames%30 == 1 {
+					for _, t := range active {
+						p := t.player
+						log.Printf("grid-trace %s frame=%d progressMsF=%.0f rawPos=%.0f mapEnd=%.0f diffSpeed=%.2f trackState=%d trackSpeed=%.2f",
+							t.label, frames, p.progressMsF, p.rawPositionF, p.MapEnd,
+							p.bMap.Diff.GetSpeed(), p.musicPlayer.GetState(), p.musicPlayer.GetSpeed())
+					}
+				}
 			}
 		}
 		raw := ffmpeg.StopVideoSpan()
