@@ -929,9 +929,10 @@ func (player *Player) DrawMain(float64) {
 		if settings.GRID && player.progressMsF > 0 && !gridCursorLogged2 {
 			gridCursorLogged2 = true
 			for _, g := range player.controller.GetCursors() {
-				log.Printf("grid-cursor-live: pos=%.0f,%.0f alpha=%.2f glider=%.2f t=%.0f startPointE=%.0f",
+				log.Printf("grid-cursor-live: pos=%.0f,%.0f alpha=%.2f glider=%.2f t=%.0f startPointE=%.0f overlay=%T players=%d",
 					g.Position.X, g.Position.Y, cursorColors[0].A,
-					player.cursorGlider.GetValue(), player.progressMsF, player.startPointE)
+					player.cursorGlider.GetValue(), player.progressMsF, player.startPointE,
+					player.overlay, settings.PLAYERS)
 			}
 		}
 
