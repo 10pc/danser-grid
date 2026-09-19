@@ -97,39 +97,63 @@ func loadGridSpec(path string) (*GridSpec, error) {
 
 // buildGridTiles constructs one Player per DISTINCT replay across all spans.
 // Tiles never share *BeatMap: NewPlayer scrubs objects in place.
-func buildGridTiles(spec *GridSpec, beatmaps []*beatmap.BeatMap) ([]*GridTile, error) {
+// Tiles that fail (bad replay/map) are reported as skips so one bad apple
+// never kills a 160-tile batch; callers drop those rows and continue.
+func buildGridTiles(spec *GridSpec, beatmaps []*beatmap.BeatMap) ([]*GridTile, [][2]string) {
 	seen := map[string]*Player{}
 	labels := map[string]string{}
 	order := []string{}
+	skips := [][2]string{}
 	for _, span := range spec.Spans {
 		for _, ts := range span.Tiles {
 			if _, ok := seen[ts.Replay]; ok {
 				continue
 			}
-			_, bMap, err := resolveGridReplay(ts.Replay, beatmaps)
+			p, label, err := buildOneTile(ts.Replay, beatmaps)
 			if err != nil {
-				return nil, err
-			}
-			svStart, svEnd, svSkip := settings.START, settings.END, settings.SKIP
-			svKO := settings.KNOCKOUTREPLAYS
-			settings.KNOCKOUTREPLAYS = []string{ts.Replay}
-			p := NewPlayer(bMap)
-			settings.START, settings.END, settings.SKIP = svStart, svEnd, svSkip
-			settings.KNOCKOUTREPLAYS = svKO
-			if n := len(p.controller.GetCursors()); n != 1 {
-				return nil, fmt.Errorf("tile %s: want 1 cursor, got %d", ts.Replay, n)
+				log.Printf("grid tile SKIP %s: %v", ts.Replay, err)
+				skips = append(skips, [2]string{ts.Replay, err.Error()})
+				continue
 			}
 			seen[ts.Replay] = p
 			order = append(order, ts.Replay)
-			labels[ts.Replay] = bMap.Artist + " - " + bMap.Name + " [" + bMap.Difficulty + "]"
-			log.Printf("grid tile: %s", labels[ts.Replay])
+			labels[ts.Replay] = label
+			log.Printf("grid tile: %s", label)
 		}
 	}
 	tiles := make([]*GridTile, 0, len(order))
 	for _, rp := range order {
 		tiles = append(tiles, &GridTile{player: seen[rp], replay: rp, label: labels[rp]})
 	}
-	return tiles, nil
+	return tiles, skips
+}
+
+// buildOneTile resolves and constructs a single tile player. NewPlayer can
+// panic on malformed map data; recover per tile so the batch survives.
+func buildOneTile(replayPath string, beatmaps []*beatmap.BeatMap) (p *Player, label string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			p = nil
+			label = ""
+			err = fmt.Errorf("construct: %v", r)
+		}
+	}()
+	_, bMap, err := resolveGridReplay(replayPath, beatmaps)
+	if err != nil {
+		return nil, "", err
+	}
+	svStart, svEnd, svSkip := settings.START, settings.END, settings.SKIP
+	svKO := settings.KNOCKOUTREPLAYS
+	defer func() {
+		settings.START, settings.END, settings.SKIP = svStart, svEnd, svSkip
+		settings.KNOCKOUTREPLAYS = svKO
+	}()
+	settings.KNOCKOUTREPLAYS = []string{replayPath}
+	p = NewPlayer(bMap)
+	if n := len(p.controller.GetCursors()); n != 1 {
+		return nil, "", fmt.Errorf("want 1 cursor, got %d", n)
+	}
+	return p, bMap.Artist + " - " + bMap.Name + " [" + bMap.Difficulty + "]", nil
 }
 
 func resolveGridReplay(replayPath string, beatmaps []*beatmap.BeatMap) (*rplpa.Replay, *beatmap.BeatMap, error) {
@@ -220,10 +244,13 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-// ProbeResult is one tile's exact record length for timeline planning.
+// ProbeResult is one tile's exact record length for timeline planning,
+// or the construction error (Python marks those rows failed and continues
+// with the rest instead of losing the batch).
 type ProbeResult struct {
 	Replay    string  `json:"replay"`
 	DurationS float64 `json:"duration_s"`
+	Error     string  `json:"error,omitempty"`
 }
 
 // ProbeGrid loads every distinct tile player and reports exact durations
@@ -238,6 +265,7 @@ func ProbeGrid(specPath string, beatmaps []*beatmap.BeatMap, outPath string) {
 		panic("grid: no beatmaps loaded")
 	}
 	var tiles []*GridTile
+	var skips [][2]string
 	var buildErr error
 	goroutines.CallMain(func() {
 		defer func() {
@@ -245,17 +273,20 @@ func ProbeGrid(specPath string, beatmaps []*beatmap.BeatMap, outPath string) {
 				buildErr = fmt.Errorf("grid probe: %v", r)
 			}
 		}()
-		tiles, buildErr = buildGridTiles(spec, beatmaps)
+		tiles, skips = buildGridTiles(spec, beatmaps)
 	})
 	if buildErr != nil {
 		panic(buildErr)
 	}
-	results := make([]ProbeResult, 0, len(tiles))
+	results := make([]ProbeResult, 0, len(tiles)+len(skips))
 	for _, t := range tiles {
 		results = append(results, ProbeResult{
 			Replay:    t.replay,
 			DurationS: t.player.MapEnd / 1000.0,
 		})
+	}
+	for _, s := range skips {
+		results = append(results, ProbeResult{Replay: s[0], Error: s[1]})
 	}
 	raw, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
@@ -302,9 +333,12 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		// Offscreen target (mirrors mainLoopRecord): window size is
 		// irrelevant, the spec canvas rules.
 		fbo = buffer.NewFrameMultisampleScreen(spec.Width, spec.Height, false, 0)
-		built, err := buildGridTiles(spec, beatmaps)
-		if err != nil {
-			initErr = err
+		built, skips := buildGridTiles(spec, beatmaps)
+		for _, s := range skips {
+			log.Printf("grid tile SKIP %s: %s", s[0], s[1])
+		}
+		if len(built) == 0 {
+			initErr = fmt.Errorf("grid init: no tiles constructed")
 			return
 		}
 		for _, t := range built {
