@@ -282,9 +282,16 @@ func ProbeGrid(specPath string, beatmaps []*beatmap.BeatMap, outPath string) {
 	}
 	results := make([]ProbeResult, 0, len(tiles)+len(skips))
 	for _, t := range tiles {
+		// MapEnd is nominal map time and the clock starts at startOffset
+		// (lead-in); wall duration divides the span by the playback rate
+		// (DT finishes early, HT late) — matching legacy record length.
+		rate := t.player.bMap.Diff.GetSpeed()
+		if rate <= 0 {
+			rate = 1
+		}
 		results = append(results, ProbeResult{
 			Replay:    t.replay,
-			DurationS: t.player.MapEnd / 1000.0,
+			DurationS: (t.player.MapEnd - t.player.startOffset) / 1000.0 / rate,
 		})
 	}
 	for _, s := range skips {
