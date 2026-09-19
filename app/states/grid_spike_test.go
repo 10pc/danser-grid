@@ -440,8 +440,11 @@ func gridDual(t *testing.T) error {
 	// ---- slice 2b: cursor layer paints (same clocks, cursor flag flip) ----
 	for i, p := range players {
 		for _, g := range p.controller.GetCursors() {
-			t.Logf("tile%d cursor pos=(%.0f,%.0f) broken=%v", i,
-				g.Position.X, g.Position.Y, p.overlay.IsBroken(g))
+			t.Logf("tile%d cursor pos=(%.0f,%.0f) broken=%v renderer=%s scale=%v trailstyle=%v useskin=%v size=%v",
+				i, g.Position.X, g.Position.Y, p.overlay.IsBroken(g),
+				g.RendererName(), g.ScaleValue(),
+				settings.Cursor.TrailStyle, settings.Skin.Cursor.UseSkinCursor,
+				settings.Cursor.CursorSize)
 		}
 	}
 	settings.Playfield.DrawCursors = true

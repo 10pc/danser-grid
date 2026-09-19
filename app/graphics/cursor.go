@@ -196,6 +196,23 @@ func (cursor *Cursor) SetOsuRect(r camera.Rectangle) {
 	cursor.osuRectOK = true
 }
 
+// RendererName reports the active cursor body renderer (grid diagnostics).
+func (cursor *Cursor) RendererName() string {
+	switch cursor.renderer.(type) {
+	case *osuRenderer:
+		return "osu"
+	case *danserRenderer:
+		return "danser"
+	default:
+		return "unknown"
+	}
+}
+
+// ScaleValue reports the cursor click-scale glider (grid diagnostics).
+func (cursor *Cursor) ScaleValue() float64 {
+	return cursor.scale.GetValue()
+}
+
 func (cursor *Cursor) SetScreenPos(pt vector.Vector2f) {
 	cursor.SetPos(Camera.Unproject(pt.Copy64()).Copy32())
 }
