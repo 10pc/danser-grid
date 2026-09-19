@@ -504,7 +504,11 @@ func run() {
 			})
 		}
 
-		win.SetTitle("danser " + build.VERSION + " - " + beatMap.Artist + " - " + beatMap.Name + " [" + beatMap.Difficulty + "]")
+		if beatMap != nil {
+			win.SetTitle("danser " + build.VERSION + " - " + beatMap.Artist + " - " + beatMap.Name + " [" + beatMap.Difficulty + "]")
+		} else {
+			win.SetTitle("danser-grid " + build.VERSION)
+		}
 		input.Win = win
 
 		if cTime := time.Now(); cTime.Month() == 12 && cTime.Day() >= 6 {
