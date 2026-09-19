@@ -189,11 +189,13 @@ func resolveGridReplay(replayPath string, beatmaps []*beatmap.BeatMap) (*rplpa.R
 	return rp, bMap, nil
 }
 
-// layoutTiles sizes tile cameras to their span rects.
-func layoutTiles(tiles []*GridTile, tsp []GridTileSpec) {
+// layoutTiles sizes tile cameras to their span rects. Spec rects are
+// top-down (ffmpeg/Python convention); gl.Viewport is bottom-up, so Y is
+// flipped here once per span (same-row layouts hid this for months).
+func layoutTiles(canvasH int, tiles []*GridTile, tsp []GridTileSpec) {
 	byReplay := map[string][4]int{}
 	for _, ts := range tsp {
-		byReplay[ts.Replay] = [4]int{ts.X, ts.Y, ts.W, ts.H}
+		byReplay[ts.Replay] = [4]int{ts.X, canvasH - ts.Y - ts.H, ts.W, ts.H}
 	}
 	sc := settings.Playfield.Scale
 	sbScale := 1.0
@@ -368,7 +370,7 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		if len(active) == 0 {
 			panic(fmt.Sprintf("grid span %s: no live tiles", span.Name))
 		}
-		layoutTiles(active, span.Tiles)
+		layoutTiles(spec.Height, active, span.Tiles)
 
 		ffmpeg.StartVideoSpan(spec.FPS, spec.Width, spec.Height, span.Name)
 		elapsed := 0.0

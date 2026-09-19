@@ -16,12 +16,17 @@ func LoadIcons(win *glfw.Window, prefix, suffix string) {
 
 	for _, size := range iconSizes {
 		pxMap, _ := assets.GetPixmap("assets/textures/" + prefix + strconv.Itoa(size) + suffix + ".png")
+		if pxMap == nil {
+			continue
+		}
 
 		pixmaps = append(pixmaps, pxMap)
 		images = append(images, pxMap.NRGBA())
 	}
 
-	win.SetIcon(images)
+	if len(images) > 0 {
+		win.SetIcon(images)
+	}
 
 	for _, pxMap := range pixmaps {
 		pxMap.Dispose()
