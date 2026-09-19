@@ -235,7 +235,7 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 	// M2 look: cursors on (per-tile bounds below); storyboards off (dim
 	// static BG per tile, no animated SB threads); bloom/blur follow the
 	// loaded profile like legacy renders.
-	settings.Playfield.DrawCursors = true
+	settings.Playfield.DrawCursors = os.Getenv("GRID_NOCURSOR") == ""
 	settings.Playfield.Background.LoadStoryboards = false
 
 	// GL init block on the pump thread: shared FBO + all tile players.
