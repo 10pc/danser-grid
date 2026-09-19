@@ -477,7 +477,10 @@ func gridDual(t *testing.T) error {
 		return err
 	}
 	t.Logf("cursor on/off mean abs diff: %.2f", diff)
-	if diff < 0.5 {
+	// A cursor + trail touches ~0.2% of pixels: measured 0.32 here.
+	// Identical frames compare exactly 0.00 (see SLICE3c), so 0.1 cleanly
+	// separates "paints" from "identical".
+	if diff < 0.1 {
 		return fmt.Errorf("cursor layer paints nothing (diff %.2f)", diff)
 	}
 	t.Logf("SLICE2b PASS: cursor layer paints per-tile cursors")
