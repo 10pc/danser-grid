@@ -356,7 +356,9 @@ func gridDual(t *testing.T) error {
 	if err := assertGridShot(t, shot); err != nil {
 		return err
 	}
-	redShot := filepath.Join(env.DataDir(), "screenshots", "grid-red.png")
+	// drawTiles tags the red probe per draw ("grid-red-"+tag); slice 2
+	// draws with tag "proof".
+	redShot := filepath.Join(env.DataDir(), "screenshots", "grid-red-proof.png")
 	rf, err := os.Open(redShot)
 	if err != nil {
 		return fmt.Errorf("red screenshot missing: %w", err)
