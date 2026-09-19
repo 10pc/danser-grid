@@ -220,6 +220,53 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+// ProbeResult is one tile's exact record length for timeline planning.
+type ProbeResult struct {
+	Replay    string  `json:"replay"`
+	DurationS float64 `json:"duration_s"`
+}
+
+// ProbeGrid loads every distinct tile player and reports exact durations
+// (MapEnd, the same length a legacy record would have). No recording, no
+// frames. Must run construction on the main thread (GL).
+func ProbeGrid(specPath string, beatmaps []*beatmap.BeatMap, outPath string) {
+	spec, err := loadGridSpec(specPath)
+	if err != nil {
+		panic(err)
+	}
+	if len(beatmaps) == 0 {
+		panic("grid: no beatmaps loaded")
+	}
+	var tiles []*GridTile
+	var buildErr error
+	goroutines.CallMain(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				buildErr = fmt.Errorf("grid probe: %v", r)
+			}
+		}()
+		tiles, buildErr = buildGridTiles(spec, beatmaps)
+	})
+	if buildErr != nil {
+		panic(buildErr)
+	}
+	results := make([]ProbeResult, 0, len(tiles))
+	for _, t := range tiles {
+		results = append(results, ProbeResult{
+			Replay:    t.replay,
+			DurationS: t.player.MapEnd / 1000.0,
+		})
+	}
+	raw, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(outPath, raw, 0644); err != nil {
+		panic(err)
+	}
+	log.Printf("grid probe: %d tiles -> %s", len(results), outPath)
+}
+
 // RunGrid renders every span in spec: one ffmpeg encode per span, clocks run
 // continuously across spans (no re-seeks). Runs on the worker thread like
 // mainLoopRecord: ticks and ffmpeg process management happen here, every GL

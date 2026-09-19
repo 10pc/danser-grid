@@ -65,6 +65,9 @@ var gridBeatmaps []*beatmap.BeatMap
 // inside the init closure: nested CallMains would deadlock the main pump.
 var gridSpecPath string
 
+// gridProbeOut, when set with -grid, reports durations instead of recording.
+var gridProbeOut string
+
 var scheduleScreenshot = false
 
 var batch *batch2.QuadBatch
@@ -118,6 +121,8 @@ func run() {
 		knockout2 := flag.String("knockout2", "", "Use (new) knockout feature, JSON list of paths to compatible replay files has to be provided. \"Knockout.ExcludeMods\" and \"Knockout.MaxPlayers\" options are ignored, they have to be filtered beforehand.")
 
 		grid := flag.String("grid", "", "Grid span renderer: path to a JSON span spec (tile layouts + replay list). Records static grid spans; implies -record. Incompatible with -replay, -knockout, -play, -ss, -start, -end.")
+
+		probeOut := flag.String("probe-out", "", "With -grid: report per-tile record durations as JSON and exit without recording.")
 
 		speed := flag.Float64("speed", 1.0, "Specify music's speed, set to 1.5 to have DoubleTime mod experience")
 		pitch := flag.Float64("pitch", 1.0, "Specify music's pitch, set to 1.5 with -speed=1.5 to have Nightcore mod experience")
@@ -627,6 +632,7 @@ func run() {
 
 		if settings.GRID {
 			gridSpecPath = *grid
+			gridProbeOut = *probeOut
 		} else {
 			if modsNew != nil {
 				beatMap.Diff.SetMods2(modsNew)
@@ -644,7 +650,11 @@ func run() {
 	})
 
 	if settings.GRID {
-		states.RunGrid(gridSpecPath, gridBeatmaps)
+		if gridProbeOut != "" {
+			states.ProbeGrid(gridSpecPath, gridBeatmaps, gridProbeOut)
+		} else {
+			states.RunGrid(gridSpecPath, gridBeatmaps)
+		}
 	} else if recordMode {
 		mainLoopRecord()
 	} else if screenshotMode {
