@@ -31,21 +31,35 @@ import (
 	"github.com/wieku/rplpa"
 )
 
-// GridTileSpec is one tile's placement (absolute canvas pixels) + source.
+// GridTileSpec is one tile's placement (absolute canvas pixels, top-down)
+// + source. Static spans use X/Y/W/H. Morph spans lerp Ax/Ay/Aw/Ah into
+// Bx/By/Bw/Bh over the span window; Dying tiles shrink toward their own
+// center (Python precomputes the to-center endpoint) while playing out.
 type GridTileSpec struct {
 	Replay string `json:"replay"`
 	X      int    `json:"x"`
 	Y      int    `json:"y"`
 	W      int    `json:"w"`
 	H      int    `json:"h"`
+	Ax     int    `json:"ax,omitempty"`
+	Ay     int    `json:"ay,omitempty"`
+	Aw     int    `json:"aw,omitempty"`
+	Ah     int    `json:"ah,omitempty"`
+	Bx     int    `json:"bx,omitempty"`
+	By     int    `json:"by,omitempty"`
+	Bw     int    `json:"bw,omitempty"`
+	Bh     int    `json:"bh,omitempty"`
+	Dying  bool   `json:"dying,omitempty"`
 }
 
-// GridSpanSpec is one static span: full-layout video for [start, end) in
-// grid (wall-clock) seconds.
+// GridSpanSpec is one span: full-layout video for [start, end) in grid
+// (wall-clock) seconds. Kind is "static" (tiles hold their rects) or
+// "morph" (tiles lerp; "" means static for backward compatibility).
 type GridSpanSpec struct {
 	Name  string         `json:"name"`
 	Start float64        `json:"start"`
 	End   float64        `json:"end"`
+	Kind  string         `json:"kind,omitempty"`
 	Tiles []GridTileSpec `json:"tiles"`
 }
 
@@ -106,9 +120,19 @@ func loadGridSpec(path string) (*GridSpec, error) {
 		if s.End <= s.Start || s.Name == "" || len(s.Tiles) == 0 {
 			return nil, fmt.Errorf("grid spec: span %d bad window/name/tiles", i)
 		}
+		if s.Kind != "" && s.Kind != "static" && s.Kind != "morph" {
+			return nil, fmt.Errorf("grid spec: span %d bad kind %q", i, s.Kind)
+		}
 		for j, t := range s.Tiles {
-			if t.W <= 0 || t.H <= 0 || t.Replay == "" {
-				return nil, fmt.Errorf("grid spec: span %d tile %d bad rect/replay", i, j)
+			if t.Replay == "" {
+				return nil, fmt.Errorf("grid spec: span %d tile %d missing replay", i, j)
+			}
+			if s.Kind == "morph" {
+				if t.Aw <= 0 || t.Ah <= 0 || t.Bw <= 0 || t.Bh <= 0 {
+					return nil, fmt.Errorf("grid spec: span %d tile %d bad morph rect", i, j)
+				}
+			} else if t.W <= 0 || t.H <= 0 {
+				return nil, fmt.Errorf("grid spec: span %d tile %d bad rect", i, j)
 			}
 		}
 	}
@@ -217,6 +241,41 @@ func layoutTiles(canvasH int, tiles []*GridTile, tsp []GridTileSpec) {
 	for _, ts := range tsp {
 		byReplay[ts.Replay] = [4]int{ts.X, canvasH - ts.Y - ts.H, ts.W, ts.H}
 	}
+	sizeCameras(tiles, byReplay)
+}
+
+// layoutTilesMorph interpolates each tile between its from/to rects at
+// progress p in [0,1] (top-down), then flips Y for GL like layoutTiles.
+// Dying tiles ride their precomputed shrink-to-center rects. Called every
+// video frame: cameras re-fit as boxes glide, exactly like a legacy glide
+// morph but rendered live — no frozen time anywhere.
+func layoutTilesMorph(canvasH int, tiles []*GridTile, tsp []GridTileSpec, p float64) {
+	if p < 0 {
+		p = 0
+	}
+	if p > 1 {
+		p = 1
+	}
+	byReplay := map[string][4]int{}
+	for _, ts := range tsp {
+		x := float64(ts.Ax) + (float64(ts.Bx-ts.Ax) * p)
+		y := float64(ts.Ay) + (float64(ts.By-ts.Ay) * p)
+		w := float64(ts.Aw) + (float64(ts.Bw-ts.Aw) * p)
+		h := float64(ts.Ah) + (float64(ts.Bh-ts.Ah) * p)
+		xi, yi, wi, hi := int(math.Round(x)), int(math.Round(y)), int(math.Round(w)), int(math.Round(h))
+		if wi < 1 {
+			wi = 1
+		}
+		if hi < 1 {
+			hi = 1
+		}
+		byReplay[ts.Replay] = [4]int{xi, canvasH - yi - hi, wi, hi}
+	}
+	sizeCameras(tiles, byReplay)
+}
+
+// sizeCameras fits every tile's cameras to its rect (GL coords).
+func sizeCameras(tiles []*GridTile, byReplay map[string][4]int) {
 	sc := settings.Playfield.Scale
 	sbScale := 1.0
 	if settings.Playfield.ScaleStoryboardWithPlayfield {
@@ -402,7 +461,10 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		if len(active) == 0 {
 			panic(fmt.Sprintf("grid span %s: no live tiles", span.Name))
 		}
-		layoutTiles(spec.Height, active, span.Tiles)
+		morph := span.Kind == "morph"
+		if !morph {
+			layoutTiles(spec.Height, active, span.Tiles)
+		}
 
 		ffmpeg.StartVideoSpan(spec.FPS, spec.Width, spec.Height, span.Name)
 		elapsed := 0.0
@@ -418,6 +480,9 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 			elapsed += updateDelta
 			deltaSumF += updateDelta
 			if deltaSumF >= fpsDelta {
+				if morph {
+					layoutTilesMorph(spec.Height, active, span.Tiles, elapsed/spanMs)
+				}
 				drawGridFrame(fbo, active, spec.Width, spec.Height)
 				deltaSumF -= fpsDelta
 				frames++
