@@ -272,7 +272,11 @@ func copyFile(src, dst string) error {
 type ProbeResult struct {
 	Replay    string  `json:"replay"`
 	DurationS float64 `json:"duration_s"`
-	Error     string  `json:"error,omitempty"`
+	// StartOffsetMs is the tile clock at video zero (negative lead-in):
+	// Python delays the map mp3 by -startOffset/rate so song zero meets
+	// map zero instead of the video start.
+	StartOffsetMs float64 `json:"start_offset_ms,omitempty"`
+	Error         string  `json:"error,omitempty"`
 }
 
 // ProbeGrid loads every distinct tile player and reports exact durations
@@ -310,8 +314,9 @@ func ProbeGrid(specPath string, beatmaps []*beatmap.BeatMap, outPath string) {
 			rate = 1
 		}
 		results = append(results, ProbeResult{
-			Replay:    t.replay,
-			DurationS: (t.player.MapEnd - t.player.startOffset) / 1000.0 / rate,
+			Replay:        t.replay,
+			DurationS:     (t.player.MapEnd - t.player.startOffset) / 1000.0 / rate,
+			StartOffsetMs: t.player.startOffset,
 		})
 	}
 	for _, s := range skips {
