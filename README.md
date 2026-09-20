@@ -2,7 +2,100 @@
   <img width="500px" src="assets/textures/coinbig.png"/>
 </p>
 
-# danser-go
+# danser-grid
+
+> Fork of [danser-go](https://github.com/Wieku/danser-go) (v0.11.0) adding a **grid span renderer**:
+> many replay tiles, one process, one encode per span. Upstream danser renders one replay
+> per run; danser-grid renders whole batches (daily completionist videos) without
+> per-clip renders. Everything below the grid section is upstream documentation.
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
+## Grid mode
+
+```
+danser-grid -grid spec.json -record -settings pipeline -noupdatecheck
+```
+
+Each span renders all its tiles live — one `Player` per replay, all ticked every
+millisecond, each drawn into its own viewport of a shared framebuffer, one ffmpeg
+encode per span. No per-clip mp4s exist at any point.
+
+Spec format (`spec.json`):
+
+```json
+{
+  "width": 1920, "height": 1080, "fps": 30, "outDir": "/tmp/grid-out",
+  "spans": [
+    {"name": "seg-000", "start": 0.0, "end": 61.5, "kind": "static",
+     "tiles": [{"replay": "/replays/a.osr", "x": 0, "y": 80, "w": 960, "h": 540}]},
+    {"name": "seg-001", "start": 61.5, "end": 62.5, "kind": "morph",
+     "tiles": [{"replay": "/replays/a.osr",
+                "ax": 0, "ay": 80, "aw": 960, "ah": 540,
+                "bx": 80, "by": 85, "bw": 1760, "bh": 990,
+                "dying": true}]}
+  ]
+}
+```
+
+- Tile rects are top-down canvas pixels (ffmpeg convention); the renderer flips Y
+  for GL itself. Tiles should be 16:9 — anything else stretches.
+- `static` spans hold their layout; `morph` spans lerp every tile from its
+  from-rect to its to-rect each frame (dying tiles shrink to their center while
+  playing out). One continuous timeline: no frozen time, video always matches audio.
+- Tile clocks are synthetic 1ms ticks starting at each map's lead-in, scaled by
+  the replay's rate mods (DT 1.5x, HT 0.75x) — a virtual audio track would pin
+  them at 1.0x, so grid drives straight off the map rate.
+- Tiles never share a `*BeatMap`: each tile clones and re-parses its map
+  (`BeatMap.Clone`), because the parse functions append and players scrub
+  objects in place. Two plays of one map would otherwise corrupt each other.
+- A tile that panics mid-span (bad slider data, corrupt replay edge) is dropped
+  with a `grid tile FAIL` log line instead of killing the batch.
+
+Probe mode reports exact wall durations (rate-adjusted, lead-in included) for planning:
+
+```
+danser-grid -grid spec.json -record -settings pipeline -probe-out durations.json
+```
+
+```json
+[{"replay": "/replays/a.osr", "duration_s": 72.55, "start_offset_ms": -4469}]
+```
+
+Diagnostics: `GRID_TRACE=1` logs per-tile clock/rate/track state once a second.
+
+## Building (Docker)
+
+Native builds need the full GL/GTK toolchain (see upstream prerequisites); the
+Docker path is tested:
+
+```bash
+docker build -f Dockerfile.spike -t danser-grid-spike .
+```
+
+Release binaries read assets from `assets.dpak` beside the binary — build with
+`-ldflags "-X github.com/wieku/danser-go/build.Stream=Release"` (Dev stream
+expects loose files instead), and ship `assets.dpak` + a `settings/` dir next
+to the executable.
+
+## Spike tests
+
+`app/states/grid_spike_test.go` (build tag `gridspike`) covers coexistence,
+viewports, clocks/seek/determinism and cursors against real fixtures:
+
+```bash
+go test -tags gridspike -c -o /src/statetest ./app/states/
+SPIKE_SONGS=/songs SPIKE_REPLAYS=/r1.osr:/r2.osr \
+  DISPLAY=:99 LD_LIBRARY_PATH=/src /src/statetest \
+  -test.run 'TestGridDual|TestShaderRepeat' -test.v
+```
+
+(The test binary must live next to `assets/` — `assets.Init(true)` resolves
+relative to the executable. Under Xvfb with software GL.)
+
+---
+
+# danser-go (upstream)
 
 [![GitHub release](https://img.shields.io/github/release/wieku/danser-go.svg)](https://github.com/Wieku/danser-go/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/wieku/danser-go/total?label=Downloads)](https://github.com/Wieku/danser-go/releases)
