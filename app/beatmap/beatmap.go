@@ -106,7 +106,13 @@ func (beatMap *BeatMap) Clear() {
 // stays shared (read-only after load).
 func (beatMap *BeatMap) Clone() *BeatMap {
 	nb := *beatMap
-	nb.Timings = objects.NewTimings()
+	// Fresh timing containers, but keep SliderMult/TickRate/defaults:
+	// slider velocity math divides by them, and NewTimings zeroes them.
+	// Clear() shares the backing array, which is safe here because every
+	// consumer re-parses (append overwrites [0,M)) before reading.
+	tm := *beatMap.Timings
+	tm.Clear()
+	nb.Timings = &tm
 	nb.Diff = beatMap.Diff.Clone()
 	nb.HitObjects = nil
 	nb.Pauses = nil
