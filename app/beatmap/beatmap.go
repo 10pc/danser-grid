@@ -99,6 +99,23 @@ func (beatMap *BeatMap) Clear() {
 	beatMap.Timings.Clear()
 }
 
+// Clone returns an independent copy for per-tile parsing: the parse
+// functions APPEND (objects, pauses, timing points) and players scrub
+// objects in place, so tiles sharing one *BeatMap corrupt each other.
+// The clone re-runs the full parse on pristine containers; pathCache
+// stays shared (read-only after load).
+func (beatMap *BeatMap) Clone() *BeatMap {
+	nb := *beatMap
+	nb.Timings = objects.NewTimings()
+	nb.Diff = beatMap.Diff.Clone()
+	nb.HitObjects = nil
+	nb.Pauses = nil
+	nb.Queue = nil
+	nb.processed = nil
+	nb.stackCalcCache = make(map[int64]bool)
+	return &nb
+}
+
 func (beatMap *BeatMap) Update(time float64) {
 	beatMap.Timings.Update(time)
 

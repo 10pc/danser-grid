@@ -222,6 +222,10 @@ func resolveGridReplay(replayPath string, beatmaps []*beatmap.BeatMap) (*rplpa.R
 	if bMap == nil {
 		return nil, nil, fmt.Errorf("no map for md5 %s", rp.BeatmapMD5)
 	}
+	// One BeatMap per TILE, never shared: ParseObjects/ParseTimingPoints
+	// APPEND, and NewPlayer scrubs objects in place, so two tiles on one
+	// map corrupt each other (duplicated objects, slider edge panics).
+	bMap = bMap.Clone()
 	modsParsed := difficulty2.Modifier(rp.Mods)
 	if !modsParsed.Compatible() {
 		return nil, nil, fmt.Errorf("incompatible mods in %s", replayPath)
