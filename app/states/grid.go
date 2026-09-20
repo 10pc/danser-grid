@@ -65,6 +65,26 @@ type GridTile struct {
 	label  string
 	rect   [4]int
 	done   bool
+	failed bool
+}
+
+// tickTile advances one tile, converting an upstream panic (bad slider
+// data, corrupt replay edge, ...) into a dropped tile instead of a dead
+// batch. Matches the build-time per-tile skip philosophy: one bad apple
+// never kills 70+ good tiles. GL-safe: panics here come from update
+// logic, never mid-draw (draws happen separately in drawGridFrame).
+func tickTile(t *GridTile, updateDelta float64) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("grid tile FAIL %s: %v (dropping tile, batch continues)",
+				t.replay, r)
+			t.done = true
+			t.failed = true
+		}
+	}()
+	if t.player.Update(updateDelta) {
+		t.done = true
+	}
 }
 
 func loadGridSpec(path string) (*GridSpec, error) {
@@ -388,9 +408,7 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 				if t.done {
 					continue
 				}
-				if t.player.Update(updateDelta) {
-					t.done = true
-				}
+				tickTile(t, updateDelta)
 			}
 			elapsed += updateDelta
 			deltaSumF += updateDelta
