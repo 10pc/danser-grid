@@ -9,7 +9,7 @@ func initGrid() *grid {
 			Height:   80,
 			FontSize: 36,
 			Color:    "#FFFFFF",
-			Template: "danser-grid | {date} | {maps}",
+			Template: "danser-grid | {line}",
 		},
 		Outro: &gridOutro{
 			Enabled:   true,
