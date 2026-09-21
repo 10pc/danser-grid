@@ -70,16 +70,43 @@ type GridSpec struct {
 	FPS    int            `json:"fps"`
 	OutDir string         `json:"outDir"`
 	Spans  []GridSpanSpec `json:"spans"`
+	// Overlay strings, computed outside danser-grid (e.g. by the
+	// completionist pipeline). Absent/null disables that element.
+	Header *GridHeaderSpec `json:"header,omitempty"`
+	Outro  *GridOutroSpec  `json:"outro,omitempty"`
+	Player *GridPlayerSpec `json:"player,omitempty"`
+}
+
+// GridHeaderSpec is one preformatted header line ("date | N maps").
+type GridHeaderSpec struct {
+	Line string `json:"line"`
+}
+
+// GridOutroSpec carries the two outro stat lines.
+type GridOutroSpec struct {
+	Line1 string `json:"line1"`
+	Line2 string `json:"line2"`
+}
+
+// GridPlayerSpec identifies the single player for the card module:
+// global rank as "#123", country as "ID", avatar as a local PNG path
+// (downloaded outside; danser-grid only reads it).
+type GridPlayerSpec struct {
+	Username string `json:"username"`
+	Rank     string `json:"rank"`
+	Country  string `json:"country"`
+	Avatar   string `json:"avatar"`
 }
 
 // GridTile is a live tile: its player plus source identity.
 type GridTile struct {
-	player *Player
-	replay string
-	label  string
-	rect   [4]int
-	done   bool
-	failed bool
+	player   *Player
+	replay   string
+	label    string
+	username string
+	rect     [4]int
+	done     bool
+	failed   bool
 }
 
 // tickTile advances one tile, converting an upstream panic (bad slider
@@ -120,8 +147,11 @@ func loadGridSpec(path string) (*GridSpec, error) {
 		if s.End <= s.Start || s.Name == "" || len(s.Tiles) == 0 {
 			return nil, fmt.Errorf("grid spec: span %d bad window/name/tiles", i)
 		}
-		if s.Kind != "" && s.Kind != "static" && s.Kind != "morph" {
+		if s.Kind != "" && s.Kind != "static" && s.Kind != "morph" && s.Kind != "outro" {
 			return nil, fmt.Errorf("grid spec: span %d bad kind %q", i, s.Kind)
+		}
+		if s.Kind == "outro" {
+			continue
 		}
 		for j, t := range s.Tiles {
 			if t.Replay == "" {
@@ -146,6 +176,7 @@ func loadGridSpec(path string) (*GridSpec, error) {
 func buildGridTiles(spec *GridSpec, beatmaps []*beatmap.BeatMap) ([]*GridTile, [][2]string) {
 	seen := map[string]*Player{}
 	labels := map[string]string{}
+	users := map[string]string{}
 	order := []string{}
 	skips := [][2]string{}
 	for _, span := range spec.Spans {
@@ -153,7 +184,7 @@ func buildGridTiles(spec *GridSpec, beatmaps []*beatmap.BeatMap) ([]*GridTile, [
 			if _, ok := seen[ts.Replay]; ok {
 				continue
 			}
-			p, label, err := buildOneTile(ts.Replay, beatmaps)
+			p, label, username, err := buildOneTile(ts.Replay, beatmaps)
 			if err != nil {
 				log.Printf("grid tile SKIP %s: %v", ts.Replay, err)
 				skips = append(skips, [2]string{ts.Replay, err.Error()})
@@ -162,29 +193,59 @@ func buildGridTiles(spec *GridSpec, beatmaps []*beatmap.BeatMap) ([]*GridTile, [
 			seen[ts.Replay] = p
 			order = append(order, ts.Replay)
 			labels[ts.Replay] = label
+			users[ts.Replay] = username
 			log.Printf("grid tile: %s", label)
 		}
 	}
 	tiles := make([]*GridTile, 0, len(order))
 	for _, rp := range order {
-		tiles = append(tiles, &GridTile{player: seen[rp], replay: rp, label: labels[rp]})
+		tiles = append(tiles, &GridTile{player: seen[rp], replay: rp, label: labels[rp], username: users[rp]})
 	}
 	return tiles, skips
 }
 
+// cardUsername returns the carded player: first tile username wins; extra
+// users are logged and omitted (single-player batches only).
+func cardUsername(tiles []*GridTile) string {
+	seen := []string{}
+	for _, t := range tiles {
+		if t.username == "" {
+			continue
+		}
+		dup := false
+		for _, u := range seen {
+			if u == t.username {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			seen = append(seen, t.username)
+		}
+	}
+	if len(seen) > 1 {
+		log.Printf("grid card: %d users in batch, carding %q and omitting the rest", len(seen), seen[0])
+	}
+	if len(seen) == 0 {
+		return ""
+	}
+	return seen[0]
+}
+
 // buildOneTile resolves and constructs a single tile player. NewPlayer can
 // panic on malformed map data; recover per tile so the batch survives.
-func buildOneTile(replayPath string, beatmaps []*beatmap.BeatMap) (p *Player, label string, err error) {
+func buildOneTile(replayPath string, beatmaps []*beatmap.BeatMap) (p *Player, label, username string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			p = nil
 			label = ""
+			username = ""
 			err = fmt.Errorf("construct: %v", r)
 		}
 	}()
-	_, bMap, err := resolveGridReplay(replayPath, beatmaps)
+	rp, bMap, err := resolveGridReplay(replayPath, beatmaps)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	svStart, svEnd, svSkip := settings.START, settings.END, settings.SKIP
 	svKO := settings.KNOCKOUTREPLAYS
@@ -195,9 +256,9 @@ func buildOneTile(replayPath string, beatmaps []*beatmap.BeatMap) (p *Player, la
 	settings.KNOCKOUTREPLAYS = []string{replayPath}
 	p = NewPlayer(bMap)
 	if n := len(p.controller.GetCursors()); n != 1 {
-		return nil, "", fmt.Errorf("want 1 cursor, got %d", n)
+		return nil, "", "", fmt.Errorf("want 1 cursor, got %d", n)
 	}
-	return p, bMap.Artist + " - " + bMap.Name + " [" + bMap.Difficulty + "]", nil
+	return p, bMap.Artist + " - " + bMap.Name + " [" + bMap.Difficulty + "]", rp.Username, nil
 }
 
 func resolveGridReplay(replayPath string, beatmaps []*beatmap.BeatMap) (*rplpa.Replay, *beatmap.BeatMap, error) {
@@ -421,6 +482,8 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 	var fbo *buffer.Framebuffer
 	byReplay := map[string]*GridTile{}
 	var initErr error
+	var built []*GridTile
+	var skips [][2]string
 	goroutines.CallMain(func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -430,9 +493,9 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		// Offscreen target (mirrors mainLoopRecord): window size is
 		// irrelevant, the spec canvas rules.
 		fbo = buffer.NewFrameMultisampleScreen(spec.Width, spec.Height, false, 0)
-		built, skips := buildGridTiles(spec, beatmaps)
+		built, skips = buildGridTiles(spec, beatmaps)
 		for _, s := range skips {
-			log.Printf("grid tile SKIP %s: %s", s[0], s[1])
+			log.Printf("grid tile SKIP %s: %v", s[0], s[1])
 		}
 		if len(built) == 0 {
 			initErr = fmt.Errorf("grid init: no tiles constructed")
@@ -441,6 +504,7 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		for _, t := range built {
 			byReplay[t.replay] = t
 		}
+		gridOv = buildGridOverlay(spec, cardUsername(built))
 	})
 	if initErr != nil {
 		panic(initErr)
@@ -450,23 +514,39 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		panic(err)
 	}
 
+	// Terminal outro span (config duration, spec lines): rendered like any
+	// other span so the outro joins the timeline with zero Python-side work.
+	if spec.Outro != nil && settings.Grid.Outro.Enabled && settings.Grid.Outro.Duration > 0 &&
+		(spec.Outro.Line1 != "" || spec.Outro.Line2 != "") {
+		lastEnd := spec.Spans[len(spec.Spans)-1].End
+		spec.Spans = append(spec.Spans, GridSpanSpec{
+			Name: "seg-outro", Start: lastEnd,
+			End:   lastEnd + settings.Grid.Outro.Duration,
+			Kind:  "outro",
+			Tiles: []GridTileSpec{{Replay: "__outro__"}},
+		})
+	}
+
 	for si, span := range spec.Spans {
 		spanMs := (span.End - span.Start) * 1000
 		log.Printf("grid span %d/%d %s [%.1f, %.1f) %d tiles",
 			si+1, len(spec.Spans), span.Name, span.Start, span.End, len(span.Tiles))
+		outro := span.Kind == "outro"
 		active := make([]*GridTile, 0, len(span.Tiles))
-		for _, ts := range span.Tiles {
-			t, ok := byReplay[ts.Replay]
-			if !ok || t.done {
-				continue
+		if !outro {
+			for _, ts := range span.Tiles {
+				t, ok := byReplay[ts.Replay]
+				if !ok || t.done {
+					continue
+				}
+				active = append(active, t)
 			}
-			active = append(active, t)
-		}
-		if len(active) == 0 {
-			panic(fmt.Sprintf("grid span %s: no live tiles", span.Name))
+			if len(active) == 0 {
+				panic(fmt.Sprintf("grid span %s: no live tiles", span.Name))
+			}
 		}
 		morph := span.Kind == "morph"
-		if !morph {
+		if !morph && !outro {
 			layoutTiles(spec.Height, active, span.Tiles)
 		}
 
@@ -475,19 +555,25 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		deltaSumF := fpsDelta
 		frames := int64(0)
 		for elapsed < spanMs {
-			for _, t := range active {
-				if t.done {
-					continue
+			if !outro {
+				for _, t := range active {
+					if t.done {
+						continue
+					}
+					tickTile(t, updateDelta)
 				}
-				tickTile(t, updateDelta)
 			}
 			elapsed += updateDelta
 			deltaSumF += updateDelta
 			if deltaSumF >= fpsDelta {
-				if morph {
-					layoutTilesMorph(spec.Height, active, span.Tiles, elapsed/spanMs)
+				if outro {
+					drawGridOutroFrame(fbo, spec.Width, spec.Height, elapsed/spanMs)
+				} else {
+					if morph {
+						layoutTilesMorph(spec.Height, active, span.Tiles, elapsed/spanMs)
+					}
+					drawGridFrame(fbo, active, spec.Width, spec.Height)
 				}
-				drawGridFrame(fbo, active, spec.Width, spec.Height)
 				deltaSumF -= fpsDelta
 				frames++
 				if os.Getenv("GRID_TRACE") != "" && frames%30 == 1 {
@@ -532,6 +618,25 @@ func drawGridFrame(fbo *buffer.Framebuffer, active []*GridTile, width, height in
 			t.player.Draw(0)
 			viewport.Pop()
 		}
+		drawGridOverlay()
+		viewport.Pop()
+		ffmpeg.MakeFrame()
+		fbo.Unbind()
+	})
+}
+
+// drawGridOutroFrame renders one outro frame (black + stat lines with
+// fades) at span progress p in [0,1]. Pump thread only (GL context).
+func drawGridOutroFrame(fbo *buffer.Framebuffer, width, height int, p float64) {
+	goroutines.CallMain(func() {
+		fbo.Bind()
+		ffmpeg.PreFrame()
+		viewport.Push(width, height)
+		gl.ClearColor(0, 0, 0, 1)
+		gl.Enable(gl.SCISSOR_TEST)
+		gl.Disable(gl.DITHER)
+		gl.Clear(gl.COLOR_BUFFER_BIT)
+		drawGridOutro(p)
 		viewport.Pop()
 		ffmpeg.MakeFrame()
 		fbo.Unbind()

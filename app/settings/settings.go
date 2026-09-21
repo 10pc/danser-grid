@@ -33,8 +33,9 @@ type Config struct {
 	Playfield   *playfield   `icon:"\uF43C"`                   // chess-board
 	CursorDance *cursorDance `icon:"\uE599"`                   // worm
 	Knockout    *knockout    `icon:"\uF0CB"`                   // list-ol
-	Recording   *recording   `icon:"\uF03D"`                   // video
-	Debug       *debug       `icon:"\uF188"`                   // bug
+	Recording   *recording   `icon:"\uF03D"` // video
+	Debug       *debug       `icon:"\uF188"` // bug
+	Grid        *grid        `icon:"\uF00A"` // grid
 	Dance       *danceOld    `json:",omitempty" icon:"\uF5B7"`
 }
 
@@ -102,6 +103,7 @@ func NewConfigFile() *Config {
 		Knockout:    initKnockout(),
 		Recording:   initRecording(),
 		Debug:       initDebug(),
+		Grid:        initGrid(),
 	}
 }
 
@@ -230,6 +232,7 @@ func (config *Config) attachToGlobals() {
 	Knockout = config.Knockout
 	Recording = config.Recording
 	Debug = config.Debug
+	Grid = config.Grid
 }
 
 func (config *Config) GetCombined() *CombinedConfig {
