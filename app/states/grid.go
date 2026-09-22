@@ -568,6 +568,7 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		ffmpeg.StartVideoSpan(spec.FPS, spec.Width, spec.Height, span.Name)
 		elapsed := 0.0
 		deltaSumF := fpsDelta
+		deltaSumA := 0.0
 		frames := int64(0)
 		for elapsed < spanMs {
 			if !outro {
@@ -580,6 +581,14 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 			}
 			elapsed += updateDelta
 			deltaSumF += updateDelta
+			// Mixer audio (hitsounds; music tracks are virtual-silent) is
+			// pulled every millisecond like mainLoopRecord, outro included
+			// (silence keeps the span audio exactly span-length).
+			deltaSumA += updateDelta
+			for deltaSumA >= 1.0 {
+				ffmpeg.PushAudio()
+				deltaSumA -= 1.0
+			}
 			if deltaSumF >= fpsDelta {
 				if outro {
 					drawGridOutroFrame(fbo, spec.Width, spec.Height, elapsed/spanMs)
@@ -602,11 +611,19 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 			}
 		}
 		raw := ffmpeg.StopVideoSpan()
+		rawAudio := ffmpeg.StopVideoSpanAudio()
 		final := filepath.Join(spec.OutDir, span.Name+".mp4")
 		// Bind mounts count as separate filesystems: rename(2) fails
 		// EXDEV across them, so copy + remove instead.
 		if err := copyFile(raw, final); err != nil {
 			panic(fmt.Sprintf("grid span %s: %v", span.Name, err))
+		}
+		audioExt := strings.TrimPrefix(filepath.Base(rawAudio), "audio")
+		if audioExt == "" || audioExt[0] != '.' {
+			audioExt = ".mp4"
+		}
+		if err := copyFile(rawAudio, filepath.Join(spec.OutDir, span.Name+".audio"+audioExt)); err != nil {
+			panic(fmt.Sprintf("grid span %s audio: %v", span.Name, err))
 		}
 		_ = os.RemoveAll(filepath.Join(spec.OutDir, span.Name+"_temp"))
 		log.Printf("grid span %s: %d frames -> %s", span.Name, frames, final)
