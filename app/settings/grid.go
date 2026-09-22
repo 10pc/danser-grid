@@ -4,6 +4,9 @@ var Grid = initGrid()
 
 func initGrid() *grid {
 	return &grid{
+		// ScoreMode: "combined" (header total only), "tiles" (per-tile
+		// only), "both". Combo and accuracy always stay per-tile.
+		ScoreMode: "combined",
 		Header: &gridHeader{
 			Enabled:  true,
 			Height:   80,
@@ -21,25 +24,24 @@ func initGrid() *grid {
 		},
 		Card: &gridCard{
 			Enabled:     true,
-			X:           24,
+			X:           16,
 			Y:           0,
-			AvatarSize:  128,
-			NameSize:    40,
-			SubSize:     30,
 			ShowRank:    true,
 			ShowCountry: true,
 		},
 	}
 }
 
-// Grid overlay suite for -grid mode: header bar, player card and outro are
-// rendered in-binary from spec strings (computed outside, e.g. by the
-// completionist pipeline). Card.Y is measured from the bottom of the
-// header bar; 0 docks the card directly under it.
+// Grid overlay suite for -grid mode: the header bar holds the player card
+// (left), the title (center) and the running batch total (right); the outro
+// closes the video. All strings come from the spec (computed outside,
+// e.g. by the completionist pipeline). Card geometry derives from the
+// header height; Card X/Y offset it from the bar's top-left.
 type grid struct {
-	Header *gridHeader
-	Outro  *gridOutro
-	Card   *gridCard
+	ScoreMode string
+	Header    *gridHeader
+	Outro     *gridOutro
+	Card      *gridCard
 }
 
 type gridHeader struct {
@@ -63,9 +65,6 @@ type gridCard struct {
 	Enabled     bool
 	X           int64
 	Y           int64
-	AvatarSize  int64
-	NameSize    int64
-	SubSize     int64
 	ShowRank    bool
 	ShowCountry bool
 }

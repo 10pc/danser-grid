@@ -684,6 +684,20 @@ func (player *Player) GetTimeOffset() float64 {
 	return player.progressMsF - player.startOffset
 }
 
+// GetScore returns the running ruleset score for replay tiles (0 for
+// anything else). Grid sums these into the header batch total.
+func (player *Player) GetScore() int64 {
+	rc, ok := player.controller.(*dance.ReplayController)
+	if !ok {
+		return 0
+	}
+	cursors := player.controller.GetCursors()
+	if len(cursors) == 0 {
+		return 0
+	}
+	return rc.GetRuleset().GetScore(cursors[0]).Score
+}
+
 func (player *Player) updateMain(delta float64) {
 	player.realTime += delta
 

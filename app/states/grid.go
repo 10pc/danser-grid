@@ -483,6 +483,14 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 	// loaded profile like legacy renders.
 	settings.Playfield.DrawCursors = os.Getenv("GRID_NOCURSOR") == ""
 	settings.Playfield.Background.LoadStoryboards = false
+	// ScoreMode combined: per-tile score counters off (the header total
+	// replaces them); "tiles" and "both" keep them. Combo and accuracy
+	// stay per-tile in every mode.
+	svShowScore := settings.Gameplay.Score.Show
+	if settings.Grid.ScoreMode == "combined" {
+		settings.Gameplay.Score.Show = false
+	}
+	defer func() { settings.Gameplay.Score.Show = svShowScore }()
 
 	// GL init block on the pump thread: shared FBO + all tile players.
 	var fbo *buffer.Framebuffer
@@ -595,6 +603,16 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 				} else {
 					if morph {
 						layoutTilesMorph(spec.Height, active, span.Tiles, elapsed/spanMs)
+					}
+					if gridOv != nil && gridOv.totalScore != nil {
+						var total int64
+						for _, t := range byReplay {
+							total += t.player.GetScore()
+						}
+						if s := formatGridTotal(total); s != gridOv.totalText {
+							gridOv.totalText = s
+							gridOv.totalScore.SetText(s)
+						}
 					}
 					drawGridFrame(fbo, active, spec.Width, spec.Height, dying, elapsed/spanMs)
 				}

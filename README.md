@@ -64,6 +64,25 @@ danser-grid -grid spec.json -record -settings pipeline -probe-out durations.json
 
 Diagnostics: `GRID_TRACE=1` logs per-tile clock/rate/track state once a second.
 
+## Grid overlays (header, card, outro, total)
+
+`settings/grid.json` section (all optional, all live-reloadable):
+- Header bar: brand template (`danser-grid | {line}` default) + centered line.
+  The bar also holds the **player card (left)** and the **running batch
+  total (right)**.
+- Player card (from the spec `player` block: username, global `#rank`,
+  country code, avatar/plate PNG paths): 2×2 layout — avatar spans both
+  rows, `username  COUNTRY` up top, `#rank` below — sized to the header
+  height, over a blurred-banner plate (plain dark rect fallback).
+- `ScoreMode`: `"combined"` (header total only, default), `"tiles"`
+  (per-tile scores only), `"both"`. Combo and accuracy always stay per-tile.
+  The total sums every tile's running ruleset score, comma-grouped.
+- Outro: terminal span (config duration, spec lines) with fades.
+
+Spec blocks (all strings, computed outside): `header.line`,
+`outro.line1/line2`, `player.{username,rank,country,avatar,banner}`.
+Multi-user batches warn and card the first username.
+
 ## Building (Docker)
 
 Native builds need the full GL/GTK toolchain (see upstream prerequisites); the

@@ -9,6 +9,7 @@ package states
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/go-gl/mathgl/mgl32"
@@ -32,6 +33,9 @@ type gridOverlayState struct {
 	cardSub    *sprite.TextSprite
 	cardPlate  *sprite.Sprite
 
+	totalScore *sprite.TextSprite
+	totalText  string
+
 	outro1 *sprite.TextSprite
 	outro2 *sprite.TextSprite
 
@@ -48,6 +52,23 @@ func parseGridColor(s string) color.Color {
 		return color.NewRGB(1, 1, 1)
 	}
 	return color.NewRGB(float32(r)/255, float32(g)/255, float32(b)/255)
+}
+
+// formatGridTotal renders the running batch total comma-grouped
+// (73-tile sums overflow legacy 8-digit padding).
+func formatGridTotal(n int64) string {
+	if n <= 0 {
+		return "0"
+	}
+	s := strconv.FormatInt(n, 10)
+	var out []byte
+	for i := 0; i < len(s); i++ {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, s[i])
+	}
+	return string(out)
 }
 
 // buildGridOverlay constructs header/card/outro sprites. Pump thread only
@@ -83,10 +104,25 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 
 	if spec.Player != nil && settings.Grid.Card.Enabled && spec.Player.Username != "" {
 		cfg := settings.Grid.Card
-		top := float64(settings.Grid.Header.Height) + float64(cfg.Y)
+		barH := float64(settings.Grid.Header.Height)
+		if spec.Header == nil || !settings.Grid.Header.Enabled {
+			barH = 0
+		}
+		// In-header card: avatar fills the bar minus padding, two text
+		// rows beside it. All sizes derive from the header height.
+		const pad = 8.0
+		avSize := barH - pad*2
+		if avSize < 16 {
+			avSize = 16
+		}
+		top := (barH - avSize) / 2
 		if spec.Header == nil || !settings.Grid.Header.Enabled {
 			top = float64(cfg.Y)
+		} else {
+			top += float64(cfg.Y)
 		}
+		nameSize := (avSize - 6) * 0.55
+		subSize := (avSize - 6) * 0.38
 		if cardUser != "" && cardUser != spec.Player.Username {
 			log.Printf("grid card: spec user %q != tile user %q, using spec",
 				spec.Player.Username, cardUser)
@@ -104,14 +140,14 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 				}
 				reg := tex.GetRegion()
 				av := sprite.NewSpriteSingle(&reg, 1001,
-					vector.NewVec2d(cx(float64(cfg.X)), cy(top)), vector.TopLeft)
-				av.SetScale(float64(cfg.AvatarSize) / tw)
+					vector.NewVec2d(cx(float64(cfg.X)+pad), cy(top)), vector.TopLeft)
+				av.SetScale(avSize / tw)
 				ov.cardAvatar = av
 			}
 		}
-		tx := float64(cfg.X)
+		tx := float64(cfg.X) + pad
 		if ov.cardAvatar != nil {
-			tx += float64(cfg.AvatarSize) + 16
+			tx += avSize + 12
 		}
 		nameLine := spec.Player.Username
 		subLine := ""
@@ -121,15 +157,14 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 		if cfg.ShowRank && spec.Player.Rank != "" {
 			subLine = spec.Player.Rank
 		}
-		ov.cardName = sprite.NewTextSpriteSize(nameLine, fnt, float64(cfg.NameSize), 1002,
+		ov.cardName = sprite.NewTextSpriteSize(nameLine, fnt, nameSize, 1002,
 			vector.NewVec2d(cx(tx), cy(top)), vector.TopLeft)
 		if subLine != "" {
-			ov.cardSub = sprite.NewTextSpriteSize(subLine, fnt, float64(cfg.SubSize), 1002,
-				vector.NewVec2d(cx(tx), cy(top+float64(cfg.NameSize)+8)), vector.TopLeft)
+			ov.cardSub = sprite.NewTextSpriteSize(subLine, fnt, subSize, 1002,
+				vector.NewVec2d(cx(tx), cy(top+nameSize+6)), vector.TopLeft)
 		}
 		// Plate behind the card: banner texture when available, else a
 		// semi-opaque black rect. Box spans avatar + widest text + padding.
-		const pad = 16.0
 		nameW := ov.cardName.GetWidth()
 		subW := 0.0
 		if ov.cardSub != nil {
@@ -141,19 +176,11 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 		}
 		avBox := 0.0
 		if ov.cardAvatar != nil {
-			avBox = float64(cfg.AvatarSize) + 16
+			avBox = avSize + 12
 		}
-		textH := float64(cfg.NameSize) + 8 + float64(cfg.SubSize)
-		if ov.cardSub == nil {
-			textH = float64(cfg.NameSize)
-		}
-		boxH := textH
-		if avBox-16 > boxH {
-			boxH = avBox - 16
-		}
-		px, py := float64(cfg.X)-pad, top-pad
+		px, py := float64(cfg.X), top-8
 		pw := avBox + textW + pad
-		ph := boxH + pad*2
+		ph := avSize + 16
 		if spec.Player.Banner != "" {
 			if bpx, err := texture.NewPixmapFileString(spec.Player.Banner); err != nil {
 				log.Printf("grid card: banner unreadable (%v), plain rect", err)
@@ -183,6 +210,17 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 			plate.SetColor(black)
 			ov.cardPlate = plate
 		}
+	}
+
+	// Running batch total, top-right of the header bar. Text updates per
+	// frame; right anchoring keeps it pinned without re-layout. Skipped in
+	// "tiles" mode (per-tile scores only, no header total).
+	if settings.Grid.Header.Enabled && settings.Grid.ScoreMode != "tiles" {
+		totalSize := float64(settings.Grid.Header.Height) / 2
+		ov.totalScore = sprite.NewTextSpriteSize("0", fnt, totalSize, 1002,
+			vector.NewVec2d(w/2-24, cy((float64(settings.Grid.Header.Height)-totalSize)/2)), vector.TopRight)
+		ov.totalScore.SetColor(parseGridColor(settings.Grid.Header.Color))
+		ov.totalText = "0"
 	}
 
 	if spec.Outro != nil && settings.Grid.Outro.Enabled &&
@@ -220,6 +258,9 @@ func drawGridOverlay() {
 	}
 	if gridOv.cardSub != nil {
 		gridOv.cardSub.Draw(0, gridOv.batch)
+	}
+	if gridOv.totalScore != nil {
+		gridOv.totalScore.Draw(0, gridOv.batch)
 	}
 }
 
