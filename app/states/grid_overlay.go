@@ -30,6 +30,7 @@ type gridOverlayState struct {
 	cardAvatar *sprite.Sprite
 	cardName   *sprite.TextSprite
 	cardSub    *sprite.TextSprite
+	cardPlate  *sprite.Sprite
 
 	outro1 *sprite.TextSprite
 	outro2 *sprite.TextSprite
@@ -126,6 +127,62 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 			ov.cardSub = sprite.NewTextSpriteSize(subLine, fnt, float64(cfg.SubSize), 1002,
 				vector.NewVec2d(cx(tx), cy(top+float64(cfg.NameSize)+8)), vector.TopLeft)
 		}
+		// Plate behind the card: banner texture when available, else a
+		// semi-opaque black rect. Box spans avatar + widest text + padding.
+		const pad = 16.0
+		nameW := ov.cardName.GetWidth()
+		subW := 0.0
+		if ov.cardSub != nil {
+			subW = ov.cardSub.GetWidth()
+		}
+		textW := nameW
+		if subW > textW {
+			textW = subW
+		}
+		avBox := 0.0
+		if ov.cardAvatar != nil {
+			avBox = float64(cfg.AvatarSize) + 16
+		}
+		textH := float64(cfg.NameSize) + 8 + float64(cfg.SubSize)
+		if ov.cardSub == nil {
+			textH = float64(cfg.NameSize)
+		}
+		boxH := textH
+		if avBox-16 > boxH {
+			boxH = avBox - 16
+		}
+		px, py := float64(cfg.X)-pad, top-pad
+		pw := avBox + textW + pad
+		ph := boxH + pad*2
+		if spec.Player.Banner != "" {
+			if bpx, err := texture.NewPixmapFileString(spec.Player.Banner); err != nil {
+				log.Printf("grid card: banner unreadable (%v), plain rect", err)
+			} else {
+				btex := texture.LoadTextureSingle(bpx.RGBA(), 0)
+				bw := float64(btex.GetWidth())
+				bh := float64(btex.GetHeight())
+				if bw < 1 {
+					bw = 1
+				}
+				if bh < 1 {
+					bh = 1
+				}
+				breg := btex.GetRegion()
+				plate := sprite.NewSpriteSingle(&breg, 1001,
+					vector.NewVec2d(cx(px), cy(py)), vector.TopLeft)
+				plate.SetScaleV(vector.NewVec2d(pw/bw, ph/bh))
+				ov.cardPlate = plate
+			}
+		}
+		if ov.cardPlate == nil {
+			black := color.NewRGBA(0, 0, 0, 0.65)
+			freg := ov.fadeTex.GetRegion()
+			plate := sprite.NewSpriteSingle(&freg, 1001,
+				vector.NewVec2d(cx(px), cy(py)), vector.TopLeft)
+			plate.SetScaleV(vector.NewVec2d(pw, ph))
+			plate.SetColor(black)
+			ov.cardPlate = plate
+		}
 	}
 
 	if spec.Outro != nil && settings.Grid.Outro.Enabled &&
@@ -151,6 +208,9 @@ func drawGridOverlay() {
 	}
 	if gridOv.header != nil {
 		gridOv.header.Draw(0, gridOv.batch)
+	}
+	if gridOv.cardPlate != nil {
+		gridOv.cardPlate.Draw(0, gridOv.batch)
 	}
 	if gridOv.cardAvatar != nil {
 		gridOv.cardAvatar.Draw(0, gridOv.batch)

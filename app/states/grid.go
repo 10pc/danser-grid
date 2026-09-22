@@ -90,13 +90,14 @@ type GridOutroSpec struct {
 }
 
 // GridPlayerSpec identifies the single player for the card module:
-// global rank as "#123", country as "ID", avatar as a local PNG path
-// (downloaded outside; danser-grid only reads it).
+// global rank as "#123", country as "ID", avatar and pre-blurred banner
+// plate as local PNG paths (downloaded outside; danser-grid only reads).
 type GridPlayerSpec struct {
 	Username string `json:"username"`
 	Rank     string `json:"rank"`
 	Country  string `json:"country"`
 	Avatar   string `json:"avatar"`
+	Banner   string `json:"banner,omitempty"`
 }
 
 // GridTile is a live tile: its player plus source identity.
