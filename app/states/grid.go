@@ -18,6 +18,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
@@ -254,6 +255,10 @@ func buildOneTile(replayPath string, beatmaps []*beatmap.BeatMap) (p *Player, la
 		settings.KNOCKOUTREPLAYS = svKO
 	}()
 	settings.KNOCKOUTREPLAYS = []string{replayPath}
+	// Grid tiles always skip intros, like legacy -skip records: the clock
+	// starts just before the first object (minus preempt) instead of the
+	// lead-in. Probe durations and start offsets adapt automatically.
+	settings.SKIP = true
 	p = NewPlayer(bMap)
 	if n := len(p.controller.GetCursors()); n != 1 {
 		return nil, "", "", fmt.Errorf("want 1 cursor, got %d", n)
@@ -549,6 +554,15 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		if !morph && !outro {
 			layoutTiles(spec.Height, active, span.Tiles)
 		}
+		var dying map[string]bool
+		if morph {
+			dying = make(map[string]bool, len(span.Tiles))
+			for _, ts := range span.Tiles {
+				if ts.Dying {
+					dying[ts.Replay] = true
+				}
+			}
+		}
 
 		ffmpeg.StartVideoSpan(spec.FPS, spec.Width, spec.Height, span.Name)
 		elapsed := 0.0
@@ -572,7 +586,7 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 					if morph {
 						layoutTilesMorph(spec.Height, active, span.Tiles, elapsed/spanMs)
 					}
-					drawGridFrame(fbo, active, spec.Width, spec.Height)
+					drawGridFrame(fbo, active, spec.Width, spec.Height, dying, elapsed/spanMs)
 				}
 				deltaSumF -= fpsDelta
 				frames++
@@ -596,12 +610,34 @@ func RunGrid(specPath string, beatmaps []*beatmap.BeatMap) {
 		_ = os.RemoveAll(filepath.Join(spec.OutDir, span.Name+"_temp"))
 		log.Printf("grid span %s: %d frames -> %s", span.Name, frames, final)
 	}
+	// Dropped-tile manifest for the caller: tiles that panicked mid-record
+	// are baked in as black cells past their failure point. Report, don't
+	// hide: the batch composition already accounts for them.
+	var failed []string
+	for _, t := range byReplay {
+		if t.failed {
+			failed = append(failed, t.replay)
+		}
+	}
+	sort.Strings(failed)
+	if len(failed) > 0 {
+		raw, err := json.MarshalIndent(failed, "", "  ")
+		if err == nil {
+			if err := os.WriteFile(filepath.Join(spec.OutDir, "grid-failed.json"), raw, 0644); err != nil {
+				log.Printf("grid: failed manifest unwritable: %v", err)
+			} else {
+				log.Printf("grid: %d tile(s) dropped mid-record, see grid-failed.json", len(failed))
+			}
+		}
+	}
 	log.Println("grid: all spans rendered")
 }
 
 // drawGridFrame renders one grid frame into the span FBO and pushes it to
-// the encoder. Pump thread only (GL context).
-func drawGridFrame(fbo *buffer.Framebuffer, active []*GridTile, width, height int) {
+// the encoder. dying maps replay -> true for tiles shrinking out this
+// morph; fadeP is the morph progress (fade ramps with it). Pump thread
+// only (GL context).
+func drawGridFrame(fbo *buffer.Framebuffer, active []*GridTile, width, height int, dying map[string]bool, fadeP float64) {
 	goroutines.CallMain(func() {
 		fbo.Bind()
 		ffmpeg.PreFrame()
@@ -618,7 +654,19 @@ func drawGridFrame(fbo *buffer.Framebuffer, active []*GridTile, width, height in
 			t.player.Draw(0)
 			viewport.Pop()
 		}
-		drawGridOverlay()
+		if gridOv != nil {
+			gridOv.batch.Begin()
+			gridOv.batch.SetCamera(gridOv.camera)
+			drawGridOverlay()
+			if len(dying) > 0 && fadeP > 0 {
+				for _, t := range active {
+					if dying[t.replay] {
+						drawTileFade(width, height, t.rect, float32(fadeP))
+					}
+				}
+			}
+			gridOv.batch.End()
+		}
 		viewport.Pop()
 		ffmpeg.MakeFrame()
 		fbo.Unbind()

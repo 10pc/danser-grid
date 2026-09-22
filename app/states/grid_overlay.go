@@ -33,6 +33,9 @@ type gridOverlayState struct {
 
 	outro1 *sprite.TextSprite
 	outro2 *sprite.TextSprite
+
+	fadeTex *texture.TextureSingle
+	fade    *sprite.Sprite
 }
 
 // gridOv is the active batch overlay (single grid run per process).
@@ -60,6 +63,11 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 	ov := &gridOverlayState{}
 	ov.batch = batch2.NewQuadBatch()
 	ov.camera = mgl32.Ortho(float32(-w/2), float32(w/2), float32(h/2), float32(-h/2), 1, -1)
+	ov.fadeTex = texture.NewTextureSingle(1, 1, 0)
+	ov.fadeTex.SetData(0, 0, 1, 1, []uint8{255, 255, 255, 255})
+	fadeReg := ov.fadeTex.GetRegion()
+	ov.fade = sprite.NewSpriteSingle(&fadeReg, 1004, vector.NewVec2d(0, 0), vector.TopLeft)
+	ov.fade.SetColor(color.NewRGB(0, 0, 0))
 
 	cx := func(x float64) float64 { return x - w/2 }   // top-down px -> ortho
 	cy := func(y float64) float64 { return y - h / 2 } // top-down px -> ortho
@@ -135,14 +143,12 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 	return ov
 }
 
-// drawGridOverlay submits header + card for a content frame. Assumes the
-// span FBO is bound with the full canvas viewport (tiles already drawn).
+// drawGridOverlay submits header + card for a content frame. The caller
+// owns the batch (Begin + camera set); tiles are already drawn underneath.
 func drawGridOverlay() {
 	if gridOv == nil {
 		return
 	}
-	gridOv.batch.Begin()
-	gridOv.batch.SetCamera(gridOv.camera)
 	if gridOv.header != nil {
 		gridOv.header.Draw(0, gridOv.batch)
 	}
@@ -155,7 +161,23 @@ func drawGridOverlay() {
 	if gridOv.cardSub != nil {
 		gridOv.cardSub.Draw(0, gridOv.batch)
 	}
-	gridOv.batch.End()
+}
+
+// drawTileFade covers a tile rect (GL bottom-up coords) with black at
+// alpha for dying tiles mid-morph. Batch must be open (see drawGridFrame).
+func drawTileFade(canvasW, canvasH int, rect [4]int, alpha float32) {
+	if gridOv == nil || gridOv.fade == nil || alpha <= 0 {
+		return
+	}
+	if alpha > 1 {
+		alpha = 1
+	}
+	x := float64(rect[0] - canvasW/2)
+	y := float64(canvasH-rect[1]-rect[3]) - float64(canvasH)/2
+	gridOv.fade.SetPosition(vector.NewVec2d(x, y))
+	gridOv.fade.SetScaleV(vector.NewVec2d(float64(rect[2]), float64(rect[3])))
+	gridOv.fade.SetAlpha(alpha)
+	gridOv.fade.Draw(0, gridOv.batch)
 }
 
 // drawGridOutro renders one outro frame at progress p in [0,1] with the
