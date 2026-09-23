@@ -30,6 +30,7 @@ type gridOverlayState struct {
 
 	cardAvatar *sprite.Sprite
 	cardName   *sprite.TextSprite
+	cardFlag   *sprite.Sprite
 	cardSub    *sprite.TextSprite
 	cardPlate  *sprite.Sprite
 
@@ -151,7 +152,28 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 		}
 		nameLine := spec.Player.Username
 		subLine := ""
-		if cfg.ShowCountry && spec.Player.Country != "" {
+		// Official flag sprite replaces the country code; unreadable or
+		// absent flag degrades to the text code, never a failed batch.
+		// Sized by name-text height (uniform scale keeps the 3:2 aspect).
+		var flagReg *texture.TextureRegion
+		flagScale := 0.0 // uniform texture->screen scale (flag height = name height)
+		flagW := 0.0     // on-screen flag width incl. gap, for the plate box
+		if cfg.ShowCountry && spec.Player.Flag != "" {
+			if fpx, err := texture.NewPixmapFileString(spec.Player.Flag); err != nil {
+				log.Printf("grid card: flag unreadable (%v), text code fallback", err)
+			} else {
+				ftex := texture.LoadTextureSingle(fpx.RGBA(), 0)
+				if fw, fh := float64(ftex.GetWidth()), float64(ftex.GetHeight()); fw >= 1 && fh >= 1 {
+					r := ftex.GetRegion()
+					flagReg = &r
+					flagScale = nameSize / fh
+					flagW = 10.0 + fw*flagScale
+				} else {
+					log.Printf("grid card: flag has no pixels, text code fallback")
+				}
+			}
+		}
+		if cfg.ShowCountry && spec.Player.Country != "" && flagReg == nil {
 			nameLine += "  " + spec.Player.Country
 		}
 		if cfg.ShowRank && spec.Player.Rank != "" {
@@ -166,6 +188,12 @@ func buildGridOverlay(spec *GridSpec, cardUser string) *gridOverlayState {
 		// Plate behind the card: banner texture when available, else a
 		// semi-opaque black rect. Box spans avatar + widest text + padding.
 		nameW := ov.cardName.GetWidth()
+		if flagReg != nil {
+			ov.cardFlag = sprite.NewSpriteSingle(flagReg, 1002,
+				vector.NewVec2d(cx(tx+nameW+10.0), cy(top)), vector.TopLeft)
+			ov.cardFlag.SetScale(flagScale)
+			nameW += flagW
+		}
 		subW := 0.0
 		if ov.cardSub != nil {
 			subW = ov.cardSub.GetWidth()
@@ -255,6 +283,9 @@ func drawGridOverlay() {
 	}
 	if gridOv.cardName != nil {
 		gridOv.cardName.Draw(0, gridOv.batch)
+	}
+	if gridOv.cardFlag != nil {
+		gridOv.cardFlag.Draw(0, gridOv.batch)
 	}
 	if gridOv.cardSub != nil {
 		gridOv.cardSub.Draw(0, gridOv.batch)
